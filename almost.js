@@ -1765,12 +1765,12 @@ bot.on("message:text", async (ctx) => {
   const userMessage = ctx.message.text;
   const tgId = ctx.from.id;
 
-  // // Если сессия не найдена, создаём новую
-  //   if (!session) {
-  //     console.log(`Сессия не найдена для пользователя ${tgId}. Создаём новую.`);
-  //     session = new Session({ userId: tgId, step: "start_сlient", userState: {} });
-  //     await session.save();
-  //   }
+  // Если сессия не найдена, создаём новую
+    if (!session) {
+      console.log(`Сессия не найдена для пользователя ${tgId}. Создаём новую.`);
+      session = new Session({ userId: tgId, step: "start_сlient", userState: {} });
+      await session.save();
+    }
 
   if (session.userState && session.userState.awaitingDeposit) {
     const text = ctx.message.text.trim().toLowerCase();

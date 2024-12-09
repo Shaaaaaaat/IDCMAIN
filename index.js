@@ -465,32 +465,16 @@ const actionData = {
     paymentSystem: "stripeAMD",
     studio: "ул. Бузанда",
   },
-  buy_5400_handstand_rub: {
-    sum: 5400,
+  buy_3900_handstand_rub: {
+    sum: 3900,
     lessons: 1,
     tag: "handstand",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "handstand",
   },
-  buy_2700_handstand_rub: {
-    sum: 2700,
-    lessons: 1,
-    tag: "handstand",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-    studio: "handstand",
-  },
-  buy_59_handstand_eur: {
-    sum: 59,
-    lessons: 1,
-    tag: "handstand",
-    currency: "EUR",
-    paymentSystem: "stripeEUR",
-    studio: "handstand",
-  },
-  buy_29_handstand_eur: {
-    sum: 29,
+  buy_39_handstand_eur: {
+    sum: 39,
     lessons: 1,
     tag: "handstand",
     currency: "EUR",
@@ -810,7 +794,7 @@ function getPriceAndSchedule(studio) {
     super_calisthenics:
       "Стоимость онлайн-курса «SuperCalisthenics»:\n👉🏻 12 занятий (доступ 6 недель):\n9600₽ | 105€\n👉🏻 36 занятий (доступ 14 недель):\n23400₽ | 249€\n👉🏻 Пробная тренировка (тест-силы)\n950₽ | 10€",
     handstand:
-      "Курс «Cногшибательная стойка на руках»\n👉🏻 С тренером: 5400₽ | 59€ \n👉🏻 Только видео-уроки: 2700₽ | 29€",
+      "Курс «Cногшибательная стойка на руках»\n👉🏻 21 Видео-урок: 3900₽ | 39€",
   };
 
   return (
