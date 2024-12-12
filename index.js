@@ -1587,16 +1587,10 @@ bot.on("callback_query:data", async (ctx) => {
       } else if (session.studio === "handstand") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            .add({
-              text: "Курс с тренером 39€",
-              callback_data: "buy_39_handstand_eur",
-            })
-            .row()
-            .add({
-              text: "Стойка на руках | 39€",
-              callback_data: "buy_39_handstand_eur",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Стойка на руках | 39€",
+            callback_data: "buy_39_handstand_eur",
+          }),
         });
         session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
