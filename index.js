@@ -1553,16 +1553,10 @@ bot.on("callback_query:data", async (ctx) => {
       } else if (session.studio === "handstand") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            .add({
-              text: "Курс с тренером 5400₽",
-              callback_data: "buy_5400_handstand_rub",
-            })
-            .row()
-            .add({
-              text: "Только видео-уроки 2700₽",
-              callback_data: "buy_2700_handstand_rub",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Стойка на руках | 3900₽",
+            callback_data: "buy_3900_handstand_rub",
+          }),
         });
         session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
@@ -1595,13 +1589,13 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard()
             .add({
-              text: "Курс с тренером 59€",
-              callback_data: "buy_59_handstand_eur",
+              text: "Курс с тренером 39€",
+              callback_data: "buy_39_handstand_eur",
             })
             .row()
             .add({
-              text: "Только видео-уроки 29€",
-              callback_data: "buy_29_handstand_eur",
+              text: "Стойка на руках | 39€",
+              callback_data: "buy_39_handstand_eur",
             }),
         });
         session.step = "online_buttons";

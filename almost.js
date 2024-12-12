@@ -442,7 +442,7 @@ const actionData = {
     studio: "ул. Бузанда",
   },
   buy_7000_yvn_gfg: {
-    sum: 400,
+    sum: 7000,
     lessons: 1,
     tag: "YVN_group_GFG",
     currency: "AMD",
@@ -465,32 +465,16 @@ const actionData = {
     paymentSystem: "stripeAMD",
     studio: "ул. Бузанда",
   },
-  buy_5400_handstand_rub: {
-    sum: 5400,
+  buy_3900_handstand_rub: {
+    sum: 3900,
     lessons: 1,
     tag: "handstand",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "handstand",
   },
-  buy_2700_handstand_rub: {
-    sum: 2700,
-    lessons: 1,
-    tag: "handstand",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-    studio: "handstand",
-  },
-  buy_59_handstand_eur: {
-    sum: 59,
-    lessons: 1,
-    tag: "handstand",
-    currency: "EUR",
-    paymentSystem: "stripeEUR",
-    studio: "handstand",
-  },
-  buy_29_handstand_eur: {
-    sum: 29,
+  buy_39_handstand_eur: {
+    sum: 39,
     lessons: 1,
     tag: "handstand",
     currency: "EUR",
@@ -810,7 +794,7 @@ function getPriceAndSchedule(studio) {
     super_calisthenics:
       "Стоимость онлайн-курса «SuperCalisthenics»:\n👉🏻 12 занятий (доступ 6 недель):\n9600₽ | 105€\n👉🏻 36 занятий (доступ 14 недель):\n23400₽ | 249€\n👉🏻 Пробная тренировка (тест-силы)\n950₽ | 10€",
     handstand:
-      "Курс «Cногшибательная стойка на руках»\n👉🏻 С тренером: 5400₽ | 59€ \n👉🏻 Только видео-уроки: 2700₽ | 29€",
+      "Курс «Cногшибательная стойка на руках»\n👉🏻 21 Видео-урок: 3900₽ | 39€",
   };
 
   return (
@@ -1433,6 +1417,7 @@ bot.on("callback_query:data", async (ctx) => {
     }
 
     session.userState = { awaitingDeposit: true };
+    await session.save();
     await ctx.reply("Введите сумму депозита:");
     await ctx.answerCallbackQuery();
     return;
@@ -1716,7 +1701,9 @@ bot.on("callback_query:data", async (ctx) => {
     console.log("генерирую ссылку для оплаты после нажатия кнопки с тарифом");
 
     const userInfo = await getUserInfo(ctx.from.id);
-    const { tag, email } = userInfo;
+    // const { tag, email } = userInfo;
+    const email = userInfo?.email || session?.email;
+    const tag = userInfo?.tag || "Отсутствует";
 
     try {
       await bot.api.sendMessage(
@@ -1766,13 +1753,17 @@ bot.on("message:text", async (ctx) => {
   const tgId = ctx.from.id;
 
   // Если сессия не найдена, создаём новую
-    if (!session) {
-      console.log(`Сессия не найдена для пользователя ${tgId}. Создаём новую.`);
-      session = new Session({ userId: tgId, step: "start_сlient", userState: {} });
-      await session.save();
-    }
+  if (!session) {
+    console.log(`Сессия не найдена для пользователя ${tgId}. Создаём новую.`);
+    session = new Session({
+      userId: tgId,
+      step: "start_сlient",
+      userState: {},
+    });
+    await session.save();
+  }
 
-  if (session.userState && session.userState.awaitingDeposit) {
+  if (session.userState?.awaitingDeposit === true) {
     const text = ctx.message.text.trim().toLowerCase();
     const sum = parseFloat(text);
     if (isNaN(sum) || sum <= 0) {
@@ -1797,13 +1788,16 @@ bot.on("message:text", async (ctx) => {
       sum,
       0,
       "deposit",
-      0,
+      "deposit",
       ctx.from.username
     );
 
-    // Сбрасываем состояние пользователя
-    delete session.userState;
-    return;
+    // // Сбрасываем состояние пользователя
+    // delete session.userState;
+    // return;
+    // Сбрасываем состояние
+    session.userState = {}; // Очистка состояния
+    await session.save();
   }
   // Проверка на ожидаемый ответ о времени тренировки
   if (session.step === "awaiting_personal_training_details") {
