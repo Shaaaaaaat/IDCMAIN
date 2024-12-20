@@ -1220,8 +1220,6 @@ bot.on("callback_query:data", async (ctx) => {
       console.log("Выбрал Питер, отправил список студий");
       // Кнопки для студий в Санкт-Петербурге
       studiosKeyboard = new InlineKeyboard()
-        .add({ text: "м. Петроградкая", callback_data: "studio_rtc" })
-        .row()
         .add({ text: "м. Выборгская", callback_data: "studio_hkc" })
         .row()
         .add({
