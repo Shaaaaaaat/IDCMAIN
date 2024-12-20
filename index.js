@@ -2061,8 +2061,6 @@ bot.on("message:text", async (ctx) => {
         .add({ text: "Поменять город", callback_data: "change_city" });
     } else if (session.city === "Санкт-Петербург") {
       studiosKeyboard = new InlineKeyboard()
-        .add({ text: "м. Петроградкая", callback_data: "studio_rtc" })
-        .row()
         .add({ text: "м. Выборгская", callback_data: "studio_hkc" })
         .row()
         .add({
