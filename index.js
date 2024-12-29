@@ -1372,7 +1372,7 @@ bot.on("callback_query:data", async (ctx) => {
 
   if (
     action === "super_calisthenics" ||
-    action === "сalisthenics_light" ||
+    action === "calisthenics_light" ||
     action === "pullups_for_ladies" ||
     action === "handstand"
   ) {
