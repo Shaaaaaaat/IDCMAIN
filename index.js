@@ -1164,26 +1164,26 @@ bot.command("start", async (ctx) => {
         console.log("Пользователь пришел по URL для online.");
         // Покажите начальное меню для online
         await ctx.reply(
-          "Привет! Подскажите, пожалуйста, какой курс вас интересует?",
+          "Привет! Подскажите, пожалуйста, какой онлайн-курс вас интересует?",
           {
             reply_markup: new InlineKeyboard()
               .add({
-                text: "Онлайн-курс «Calisthenics light»",
+                text: "Calisthenics light (для новчиков)",
                 callback_data: "calisthenics_light",
               })
               .row()
               .add({
-                text: "Онлайн-курс «Super Calisthenics»",
+                text: "Super Calisthenics (для продвинутых)",
                 callback_data: "super_calisthenics",
               })
               .row()
               .add({
-                text: "Онлайн-курс «Подтягивания для девушек: от 0 до 1»",
+                text: "Подтягивания для девушек: от 0 до 1",
                 callback_data: "pullups_for_ladies",
               })
               .row()
               .add({
-                text: "Оналйн-курс «Стойка на руках»",
+                text: "Сногшибательная стойка на руках",
                 callback_data: "handstand",
               }),
           }
@@ -1346,25 +1346,25 @@ bot.on("callback_query:data", async (ctx) => {
     await updateAirtableRecord(session.airtableId, session.city, "");
 
     // Отправляем сообщение с основным меню
-    await ctx.reply("Выберите, пожалуйста, курс:", {
+    await ctx.reply("Выберите, пожалуйста, онлайн-курс:", {
       reply_markup: new InlineKeyboard()
         .add({
-          text: "Онлайн-курс «Calisthenics light»",
+          text: "Calisthenics light (для новичков)",
           callback_data: "calisthenics_light",
         })
         .row()
         .add({
-          text: "Онлайн-курс «Super Calisthenics»",
+          text: "Super Calisthenics (для продвинутых)",
           callback_data: "super_calisthenics",
         })
         .row()
         .add({
-          text: "Онлайн-курс «Подтягивания для девушек: от 0 до 1»",
+          text: "Подтягивания для девушек: от 0 до 1",
           callback_data: "pullups_for_ladies",
         })
         .row()
         .add({
-          text: "Оналйн-курс «Стойка на руках»",
+          text: "Сногшибательная стойка на руках",
           callback_data: "handstand",
         }),
     });
@@ -2170,25 +2170,25 @@ bot.on("message:text", async (ctx) => {
     await ctx.reply(priceAndSchedule);
   } else if (userMessage === "⬅️ Назад") {
     console.log("Нажал на кнопку - ⬅️ Назад");
-    await ctx.reply("Выберите какой курс вас интересует?", {
+    await ctx.reply("Выберите какой онлайн-курс вас интересует?", {
       reply_markup: new InlineKeyboard()
         .add({
-          text: "Онлайн-курс «Calisthenics light»",
+          text: "Calisthenics light (для новичков)",
           callback_data: "calisthenics_light",
         })
         .row()
         .add({
-          text: "Онлайн-курс «Super Calisthenics»",
+          text: "Super Calisthenics (для продвинутых)",
           callback_data: "super_calisthenics",
         })
         .row()
         .add({
-          text: "Онлайн-курс «Подтягивания для девушек: от 0 до 1»",
+          text: "Подтягивания для девушек: от 0 до 1",
           callback_data: "pullups_for_ladies",
         })
         .row()
         .add({
-          text: "Оналйн-курс «Стойка на руках»",
+          text: "Сногшибательная стойка на руках»",
           callback_data: "handstand",
         }),
     });
