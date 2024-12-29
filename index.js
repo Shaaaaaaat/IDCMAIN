@@ -482,7 +482,7 @@ const actionData = {
     studio: "handstand",
   },
   buy_9600_pullups_rub: {
-    sum: 3,
+    sum: 7680,
     lessons: 1,
     tag: "pullups_for_ladies",
     currency: "RUB",
