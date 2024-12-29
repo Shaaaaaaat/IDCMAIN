@@ -1643,7 +1643,7 @@ bot.on("callback_query:data", async (ctx) => {
             })
             .row()
             .add({
-              text: "12 занятий (8400) - доступ 6 недель",
+              text: "🎄 12 занятий (8400) - доступ 6 недель",
               callback_data: "buy_9600_ds_rub",
             })
             .row()
@@ -1659,7 +1659,7 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard()
             .add({
-              text: "7680₽ / месяц",
+              text: "🎄 7680₽ / месяц",
               callback_data: "buy_9600_pullups_rub",
             })
             .row()
@@ -1674,7 +1674,7 @@ bot.on("callback_query:data", async (ctx) => {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard().add({
-            text: "Стойка на руках | 3120₽",
+            text: "🎄 Стойка на руках | 3120₽",
             callback_data: "buy_3900_handstand_rub",
           }),
         });
@@ -1696,7 +1696,7 @@ bot.on("callback_query:data", async (ctx) => {
             })
             .row()
             .add({
-              text: "12 занятий (89€) - действует 6 недель",
+              text: "🎄 12 занятий (89€) - действует 6 недель",
               callback_data: "buy_105_ds_eur",
             })
             .row()
@@ -1712,7 +1712,7 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard()
             .add({
-              text: "77€ / месяц",
+              text: "🎄 77€ / месяц",
               callback_data: "buy_99_pullups_eur",
             })
             .row()
@@ -1727,7 +1727,7 @@ bot.on("callback_query:data", async (ctx) => {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard().add({
-            text: "Стойка на руках | 31€",
+            text: "🎄 Стойка на руках | 31€",
             callback_data: "buy_39_handstand_eur",
           }),
         });
