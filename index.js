@@ -418,7 +418,7 @@ const actionData = {
     paymentSystem: "robokassa",
   },
   buy_105_ds_eur: {
-    sum: 105,
+    sum: 89,
     lessons: 12,
     tag: "ds_eur",
     currency: "EUR",
@@ -474,7 +474,7 @@ const actionData = {
     studio: "handstand",
   },
   buy_39_handstand_eur: {
-    sum: 39,
+    sum: 31,
     lessons: 1,
     tag: "handstand",
     currency: "EUR",
@@ -482,7 +482,7 @@ const actionData = {
     studio: "handstand",
   },
   buy_9600_pullups_rub: {
-    sum: 7680,
+    sum: 3,
     lessons: 1,
     tag: "pullups_for_ladies",
     currency: "RUB",
