@@ -252,14 +252,14 @@ const actionData = {
   buy_11400_spb_spi: {
     sum: 11400,
     lessons: 12,
-    tag: "SPB_group_SPI",
+    tag: "SPB_group_SPI_long",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
   buy_9600_spb_spi: {
     sum: 9600,
     lessons: 12,
-    tag: "SPB_group_SPI",
+    tag: "SPB_group_SPI_short",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
@@ -350,14 +350,14 @@ const actionData = {
   buy_11400_spb_hkc: {
     sum: 11400,
     lessons: 12,
-    tag: "SPB_group_HKC",
+    tag: "SPB_group_HKC_long",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
   buy_9600_spb_hkc: {
     sum: 9600,
     lessons: 12,
-    tag: "SPB_group_HKC",
+    tag: "SPB_group_HKC_short",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
