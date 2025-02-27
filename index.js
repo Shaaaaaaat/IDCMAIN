@@ -2164,7 +2164,7 @@ bot.on("message:text", async (ctx) => {
 
     if (result !== null) {
       if (result.balance !== 0) {
-        await ctx.reply(`Ваш абонемент действует до: ${result.Final_day}`);
+        await ctx.reply(`Ваш абонемент действует до: ${result.finalDay}`);
       } else {
         await ctx.reply("У вас нет действующего абонемента.");
       }
