@@ -2163,10 +2163,19 @@ bot.on("message:text", async (ctx) => {
     const result = await getUserInfo(tgId);
 
     if (result !== null) {
-      if (result.balance !== 0) {
-        await ctx.reply(`Ваш абонемент действует до: ${result.finalDay}`);
-      } else {
+      if (result.balance <= 0) {
+        // ⬅️ Теперь проверяем, если баланс 0 или меньше
         await ctx.reply("У вас нет действующего абонемента.");
+        return; // ⬅️ Останавливаем выполнение дальше
+      }
+
+      if (!result.finalDay) {
+        // ⬅️ Проверяем сразу "", null, undefined
+        await ctx.reply(
+          "Не удалось получить информацию о дате окончания. Пожалуйста, попробуйте позже."
+        );
+      } else {
+        await ctx.reply(`Ваш абонемент действует до: ${result.finalDay}`);
       }
     } else {
       await ctx.reply(
