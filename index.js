@@ -839,7 +839,7 @@ async function getUserInfo(tgId) {
 
     if (records.length > 0) {
       const email = records[0].fields.email || "нет email"; // Если email отсутствует, выводим сообщение
-      const finalDay = records[0].fields.Final_day || "неизвестен"; // Если тег отсутствует, выводим "неизвестен"
+      const finalDay = records[0].fields.Final_day;
       const tag = records[0].fields.Tag || "неизвестен"; // Если тег отсутствует, выводим "неизвестен"
       const balance =
         records[0].fields.Balance !== undefined
