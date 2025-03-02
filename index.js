@@ -1637,37 +1637,20 @@ bot.on("callback_query:data", async (ctx) => {
       ) {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            .add({
-              text: "Пробное (950₽) - доступ 4 недели",
-              callback_data: "buy_950_powertest_ru",
-            })
-            .row()
-            .add({
-              text: "12 занятий (9600₽) - доступ 6 недель",
-              callback_data: "buy_9600_ds_rub",
-            })
-            .row()
-            .add({
-              text: "36 занятий (23400₽) - доступ 14 недель",
-              callback_data: "buy_23400_ds_rub",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Пробное (950₽) - доступ 4 недели",
+            callback_data: "buy_950_powertest_ru",
+          }),
         });
         session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            .add({
-              text: "8400₽ / месяц",
-              callback_data: "buy_9600_pullups_rub",
-            })
-            .row()
-            .add({
-              text: "Пробное (950₽) - доступ 4 недели",
-              callback_data: "buy_950_powertest_ru",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Пробное (950₽) - доступ 4 недели",
+            callback_data: "buy_950_powertest_ru",
+          }),
         });
         session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
@@ -1690,37 +1673,20 @@ bot.on("callback_query:data", async (ctx) => {
       ) {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            .add({
-              text: "Пробное (тест-силы) 10€ - действует 4 недели",
-              callback_data: "buy_10_powertest_eur",
-            })
-            .row()
-            .add({
-              text: "12 занятий (105€) - действует 6 недель",
-              callback_data: "buy_105_ds_eur",
-            })
-            .row()
-            .add({
-              text: "36 занятий (249€) - действует 14 недель",
-              callback_data: "buy_249_ds_eur",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Пробное (тест-силы) 10€ - действует 4 недели",
+            callback_data: "buy_10_powertest_eur",
+          }),
         });
         session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            .add({
-              text: "84€ / месяц",
-              callback_data: "buy_99_pullups_eur",
-            })
-            .row()
-            .add({
-              text: "Пробное (тест-силы) 10€ - действует 4 недели",
-              callback_data: "buy_10_powertest_eur",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Пробное (тест-силы) 10€ - действует 4 недели",
+            callback_data: "buy_10_powertest_eur",
+          }),
         });
         session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
