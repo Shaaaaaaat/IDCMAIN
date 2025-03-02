@@ -1638,7 +1638,7 @@ bot.on("callback_query:data", async (ctx) => {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard().add({
-            text: "Пробное (950₽) - доступ 4 недели",
+            text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
             callback_data: "buy_950_powertest_ru",
           }),
         });
@@ -1648,7 +1648,7 @@ bot.on("callback_query:data", async (ctx) => {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard().add({
-            text: "Пробное (950₽) - доступ 4 недели",
+            text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
             callback_data: "buy_950_powertest_ru",
           }),
         });
