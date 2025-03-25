@@ -1164,7 +1164,7 @@ async function sendDateToAirtable(tgId, date) {
     await axios.patch(updateUrl, data, { headers });
     console.log("Дата успешно обновлена в Airtable.");
     // 4. Формируем сообщение
-    const message = `${name} поменял дату пробного занятия с ${oldDate} на ${newDate}\nTag: ${tag}`;
+    const message = `${name} поменял дату пробного занятия с ${oldDate} на ${date}\nTag: ${tag}`;
 
     // 5. Отправляем в Telegram
     await bot.api.sendMessage(-4510303967, message);
