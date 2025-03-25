@@ -1128,23 +1128,36 @@ async function sendDateToAirtable(tgId, date) {
   const baseId = process.env.AIRTABLE_BASE_ID;
   const clientsId = process.env.AIRTABLE_CLIENTS_ID;
 
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
+  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}`;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
 
-  const data = {
-    fields: {
-      Future_plan: date,
-    },
-  };
-
   try {
-    await axios.post(url, data, { headers });
+    // Шаг 1: Найти запись по tgId
+    const searchUrl = `${url}?filterByFormula={tgId}='${tgId}'`;
+    const searchResponse = await axios.get(searchUrl, { headers });
+    const records = searchResponse.data.records;
+
+    if (records.length === 0) {
+      console.warn("Запись с таким tgId не найдена.");
+      return;
+    }
+
+    const recordId = records[0].id;
+    // Шаг 2: Обновить запись
+    const updateUrl = `${url}/${recordId}`;
+    const data = {
+      fields: {
+        Future_plan: date,
+      },
+    };
+    await axios.patch(updateUrl, data, { headers });
+    console.log("Дата успешно обновлена в Airtable.");
   } catch (error) {
     console.error(
-      "Error sending data to Airtable:",
+      "Ошибка при обновлении даты в Airtable:",
       error.response ? error.response.data : error.message
     );
   }
