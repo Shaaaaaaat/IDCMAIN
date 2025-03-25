@@ -727,10 +727,6 @@ const buttonsData = {
         callback_data: "buy_1100_ds_rub",
       },
       {
-        text: "Подписка 8400₽/месяц",
-        callback_data: "buy_8400_ds_rub",
-      },
-      {
         text: "12 занятий (9 600₽) — действует 6 недель",
         callback_data: "buy_9600_ds_rub",
       },
@@ -738,6 +734,10 @@ const buttonsData = {
         text: "36 занятий (23 400₽) — действует 14 недель",
         callback_data: "buy_23400_ds_rub",
       },
+      // {
+      //   text: "Подписка 8 400₽ / месяц",
+      //   callback_data: "buy_8400_ds_rub",
+      // },
     ],
     EUR: [
       {
