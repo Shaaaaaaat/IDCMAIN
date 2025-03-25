@@ -1122,6 +1122,34 @@ async function sendTwoToAirtable(tgId, invId, sum, lessons, tag, date, nick) {
   }
 }
 
+// Функция для отправки данных в Airtable - clients
+async function sendDateToAirtable(date) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const buyId = process.env.AIRTABLE_CLIENTS_ID;
+
+  const url = `https://api.airtable.com/v0/${baseId}/${buyId}`;
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  const data = {
+    fields: {
+      Future_plan: date,
+    },
+  };
+
+  try {
+    await axios.post(url, data, { headers });
+  } catch (error) {
+    console.error(
+      "Error sending data to Airtable:",
+      error.response ? error.response.data : error.message
+    );
+  }
+}
+
 // Функция для отправки данных в Airtable 2
 async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag) {
   const apiKey = process.env.AIRTABLE_API_KEY;
@@ -1793,6 +1821,14 @@ bot.on("callback_query:data", async (ctx) => {
       str2,
       ctx.from.username
     );
+  } else if (action.startsWith("reday")) {
+    const buttonText2 = action.split(",")[1];
+    const date2 = buttonText2.match(/\(([^)]+)\)/);
+    const str3 = JSON.stringify(date2[1]);
+    const str4 = JSON.parse(str3);
+    console.log(`Выбрал дату групповой тренировки - ${str4}`);
+
+    await sendDateToAirtable(str4);
   } else if (action.startsWith("later")) {
     console.log("Выбрал позже указать дату групповой тренировки");
     await ctx.reply(
