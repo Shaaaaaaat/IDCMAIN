@@ -1145,7 +1145,15 @@ async function sendDateToAirtable(tgId, date) {
       return;
     }
 
-    const recordId = records[0].id;
+    const record = records[0];
+    const recordId = record.id;
+    const fields = record.fields;
+
+    // Извлекаем нужные данные
+    const name = fields.FIO3 || "Неизвестный пользователь";
+    const oldDate = fields.Future_plan || "не указана";
+    const tag = fields.Tag || "неизвестен";
+
     // Шаг 2: Обновить запись
     const updateUrl = `${url}/${recordId}`;
     const data = {
@@ -1155,6 +1163,13 @@ async function sendDateToAirtable(tgId, date) {
     };
     await axios.patch(updateUrl, data, { headers });
     console.log("Дата успешно обновлена в Airtable.");
+    // 4. Формируем сообщение
+    const message = `${name} поменял дату пробного занятия с ${oldDate} на ${newDate}\nTag: ${tag}`;
+
+    // 5. Отправляем в Telegram
+    await bot.api.sendMessage(-4510303967, message);
+
+    console.log("Дата обновлена и сообщение отправлено в Telegram.");
   } catch (error) {
     console.error(
       "Ошибка при обновлении даты в Airtable:",
