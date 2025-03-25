@@ -928,6 +928,35 @@ async function sendToWebhook(studio, telegramId) {
   }
 }
 
+// Функция для отправки данных на вебхук для ПЕРЕЗАПИСИ
+async function resendToWebhook(tag, telegramId) {
+  const webhookUrl =
+    "https://hook.eu1.make.com/fx5zhx7yuv6q4k0b4g5mzgtidp5ym428"; // Вставьте ваш URL вебхука
+
+  // Формируем данные для отправки
+  const data = [
+    {
+      messenger: "telegram",
+      variables: [
+        {
+          name: "tag",
+          type: "text",
+          value: tag, // Передаем выбранную студию
+        },
+      ],
+      telegram_id: telegramId, // Передаем id пользователя
+    },
+  ];
+
+  try {
+    // Отправляем POST-запрос на вебхук Make.com
+    await axios.post(webhookUrl, data);
+    console.log("Данные успешно отправлены на вебхук");
+  } catch (error) {
+    console.error("Ошибка при отправке на вебхук:", error.message);
+  }
+}
+
 // Функция для проверки наличия пользователя в Airtable
 async function checkUserInAirtable(tgId) {
   const apiKey = process.env.AIRTABLE_API_KEY;
@@ -2023,6 +2052,26 @@ bot.on("message:text", async (ctx) => {
             resize_keyboard: true,
           },
         });
+        break;
+      case "/reschedule":
+        console.log("Вызвал /reschedule");
+
+        const tgId = ctx.from.id;
+        const result = await getUserInfo(tgId);
+
+        if (result.balance <= 0) {
+          // ⬅️ Теперь проверяем, если баланс 0 или меньше
+          await ctx.reply("У вас нет действующего абонемента.");
+          return; // ⬅️ Останавливаем выполнение дальше
+        } else if ((result.balance = 950)) {
+          const tag = result.tag;
+          const telegramId = ctx.from.id; // ID пользователя Telegram
+          await resendToWebhook(tag, telegramId);
+        }
+
+        await ctx.reply(
+          "Если у вас остались вопросы, вы можете написать нашему менеджеру Никите: @IDC_Manager, он подскажет 😉"
+        );
         break;
       case "/operator":
         console.log("Вызвал /operator");
