@@ -2068,10 +2068,6 @@ bot.on("message:text", async (ctx) => {
           const telegramId = ctx.from.id; // ID пользователя Telegram
           await resendToWebhook(tag, telegramId);
         }
-
-        await ctx.reply(
-          "Если у вас остались вопросы, вы можете написать нашему менеджеру Никите: @IDC_Manager, он подскажет 😉"
-        );
         break;
       case "/operator":
         console.log("Вызвал /operator");
