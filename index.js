@@ -1122,13 +1122,13 @@ async function sendTwoToAirtable(tgId, invId, sum, lessons, tag, date, nick) {
   }
 }
 
-// Функция для отправки данных в Airtable - clients
-async function sendDateToAirtable(date) {
+// Функция для обновления данных в Airtable - clients
+async function sendDateToAirtable(id, date) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
   const buyId = process.env.AIRTABLE_CLIENTS_ID;
 
-  const url = `https://api.airtable.com/v0/${baseId}/${buyId}`;
+  const url = `https://api.airtable.com/v0/${baseId}/${buyId}/${id}`;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
@@ -1828,7 +1828,7 @@ bot.on("callback_query:data", async (ctx) => {
     const str4 = JSON.parse(str3);
     console.log(`Выбрал дату групповой тренировки - ${str4}`);
 
-    await sendDateToAirtable(str4);
+    await sendDateToAirtable(session.airtableId, str4);
   } else if (action.startsWith("later")) {
     console.log("Выбрал позже указать дату групповой тренировки");
     await ctx.reply(
