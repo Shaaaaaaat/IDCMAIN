@@ -1167,7 +1167,7 @@ async function sendDateToAirtable(tgId, date) {
     const message = `${name} поменял дату пробного занятия с ${oldDate} на ${date}\nTag: ${tag}`;
 
     // 5. Отправляем в Telegram
-    await bot.api.sendMessage(-4510303967, message);
+    await bot.api.sendMessage(-4574119075, message);
 
     // 6. Отправляем в Make Webhook
     await axios.post(
