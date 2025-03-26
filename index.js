@@ -1169,7 +1169,14 @@ async function sendDateToAirtable(tgId, date) {
     // 5. Отправляем в Telegram
     await bot.api.sendMessage(-4510303967, message);
 
-    console.log("Дата обновлена и сообщение отправлено в Telegram.");
+    // 6. Отправляем в Make Webhook
+    await axios.post(
+      "https://hook.eu1.make.com/1kc2npyqwiakv5646e1to297pi2g9b14",
+      { message }
+    );
+
+    console.log("Дата обновлена, сообщение отправлено в Telegram и Make.");
+    return message;
   } catch (error) {
     console.error(
       "Ошибка при обновлении даты в Airtable:",
