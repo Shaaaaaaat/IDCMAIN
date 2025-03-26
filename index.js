@@ -1170,10 +1170,13 @@ async function sendDateToAirtable(tgId, date) {
     await bot.api.sendMessage(-4510303967, message);
 
     // 6. Отправляем в Make Webhook
-    await axios.post(
-      "https://hook.eu1.make.com/1kc2npyqwiakv5646e1to297pi2g9b14",
-      { message }
-    );
+    await axios.post(makeWebhookUrl, {
+      name,
+      oldDate,
+      date,
+      tag,
+      tgId,
+    });
 
     console.log("Дата обновлена, сообщение отправлено в Telegram и Make.");
     return message;
