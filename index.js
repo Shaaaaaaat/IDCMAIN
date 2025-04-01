@@ -425,7 +425,7 @@ const actionData = {
     paymentSystem: "robokassa",
   },
   buy_105_ds_eur: {
-    sum: 105,
+    sum: 108,
     lessons: 12,
     tag: "ds_eur",
     currency: "EUR",
@@ -433,7 +433,7 @@ const actionData = {
     studio: "super_calisthenics",
   },
   buy_249_ds_eur: {
-    sum: 249,
+    sum: 252,
     lessons: 36,
     tag: "ds_eur",
     currency: "EUR",
