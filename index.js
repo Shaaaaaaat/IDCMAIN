@@ -1868,8 +1868,10 @@ bot.on("callback_query:data", async (ctx) => {
     const str3 = JSON.stringify(date2[1]);
     const str4 = JSON.parse(str3);
     console.log(`Выбрал дату групповой тренировки - ${str4}`);
-
     await sendDateToAirtable(ctx.from.id, str4);
+
+    await ctx.reply(`Отлично! Вы успешно перенесли запись на: ${str4}.`);
+    session.step = "completed2";
   } else if (action.startsWith("later")) {
     console.log("Выбрал позже указать дату групповой тренировки");
     await ctx.reply(
