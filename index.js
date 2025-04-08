@@ -2090,7 +2090,8 @@ bot.on("message:text", async (ctx) => {
     );
 
     // Удаляем стационарное меню
-    await ctx.reply("Пожалуйста, введите вашу фамилию и имя:", {
+    await ctx.reply(`<b>Пожалуйста, введите вашу фамилию и имя:</b>`, {
+      parse_mode: "HTML",
       reply_markup: {
         remove_keyboard: true, // Удаляет текущее стационарное меню
       },
