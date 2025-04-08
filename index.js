@@ -2085,12 +2085,8 @@ bot.on("message:text", async (ctx) => {
     console.log("Нажал на кнопку - записаться на тренировку");
 
     await ctx.reply(
-      `
-      _Направляя свои персональные данные в чат-бот @IDCMAIN_bot, Вы соглашаетесь с условиями [Договора-оферты](https://calisthenics.ru/public_offer), а также даете свое согласие на [обработку персональных данных](https://calisthenics.ru/consent_policy) согласно [политике обработки персональных данных](https://calisthenics.ru/personal_data_processing_policy)._
-      `,
-      {
-        parse_mode: "Markdown",
-      }
+      `<i>Направляя свои персональные данные в чат-бот @IDCMAIN_bot, Вы соглашаетесь с условиями <a href="https://calisthenics.ru/public_offer">Договора-оферты</a>, а также даете свое согласие на <a href="https://calisthenics.ru/consent_policy">обработку персональных данных</a> согласно <a href="https://calisthenics.ru/personal_data_processing_policy">политике обработки персональных данных</a>.</i>`,
+      { parse_mode: "HTML" }
     );
 
     // Удаляем стационарное меню
