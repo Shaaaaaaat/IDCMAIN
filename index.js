@@ -509,7 +509,7 @@ const actionData = {
     studio: "pullups_for_ladies",
   },
   buy_950_powertest_ru: {
-    sum: 950,
+    sum: 2,
     lessons: 1,
     tag: "ds_rub",
     currency: "RUB",
@@ -1870,8 +1870,8 @@ bot.on("callback_query:data", async (ctx) => {
     const buttonText = action.split(",")[1];
     const date = buttonText.match(/\(([^)]+)\)/);
     const str = JSON.stringify(date[1]);
-    const str2 = JSON.parse(str);
-    console.log(`Выбрал дату онлайн тренировки - ${str2}`);
+    const str5 = JSON.parse(str);
+    console.log(`Выбрал дату онлайн тренировки - ${str5}`);
 
     await ctx.reply(
       `Отлично! Вы выбрали: ${buttonText}. В течение 24 часов на вашу почту придет письмо с темой <b>[TrueCoach] Invitation</b>, содержащее приглашение для доступа к приложению, где будет стоять первая тренировка.\n\nПосле ее прохождения тренер свяжется с вами и предоставит подробную обратную связь.
@@ -1889,7 +1889,7 @@ bot.on("callback_query:data", async (ctx) => {
 
     await ctx.reply(`Желаем классных тренировок! 💜`);
 
-    await sendDateToAirtable(ctx.from.id, str4);
+    await sendDateToAirtable(ctx.from.id, str5);
 
     session.step = "completed";
     await session.save();
