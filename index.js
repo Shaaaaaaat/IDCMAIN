@@ -1868,17 +1868,12 @@ bot.on("callback_query:data", async (ctx) => {
     );
   } else if (action.startsWith("testday")) {
     const buttonText = action.split(",")[1];
-    console.log(`Выбрал дату онлайн тренировки 1 - ${buttonText}`);
     const date = buttonText.match(/\(([^)]+)\)/);
     const str = JSON.stringify(date[1]);
     const str5 = JSON.parse(str);
     console.log(`Выбрал дату онлайн тренировки - ${str5}`);
 
-    // Удаляем сообщение с кнопками
-    await ctx.telegram.deleteMessage(
-      ctx.callbackQuery.message.chat.id,
-      ctx.callbackQuery.message.message_id
-    );
+    await ctx.deleteMessage();
 
     // 4. Формируем сообщение
     const mess2 = `Дата теста-силы: ${str5}\nTgId: ${ctx.from.id}`;
