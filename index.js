@@ -422,7 +422,7 @@ const actionData = {
     paymentSystem: "robokassa",
   },
   buy_23400_ds_rub: {
-    sum: 23400,
+    sum: 36,
     lessons: 36,
     tag: "ds_rub",
     currency: "RUB",
@@ -509,7 +509,7 @@ const actionData = {
     studio: "pullups_for_ladies",
   },
   buy_950_powertest_ru: {
-    sum: 1,
+    sum: 950,
     lessons: 1,
     tag: "ds_rub_start",
     currency: "RUB",
