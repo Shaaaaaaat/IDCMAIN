@@ -509,7 +509,7 @@ const actionData = {
     studio: "pullups_for_ladies",
   },
   buy_950_powertest_ru: {
-    sum: 950,
+    sum: 10,
     lessons: 1,
     tag: "ds_rub_start",
     currency: "RUB",
