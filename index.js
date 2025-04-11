@@ -1755,7 +1755,7 @@ bot.on("callback_query:data", async (ctx) => {
             callback_data: "buy_950_powertest_ru",
           }),
         });
-        session.step = "online_buttons";
+        session.step = "online_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
@@ -1765,7 +1765,7 @@ bot.on("callback_query:data", async (ctx) => {
             callback_data: "buy_950_powertest_ru",
           }),
         });
-        session.step = "online_buttons";
+        session.step = "oonline_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "handstand") {
         console.log("Отправляю тарифы");
@@ -1791,7 +1791,7 @@ bot.on("callback_query:data", async (ctx) => {
             callback_data: "buy_10_powertest_eur",
           }),
         });
-        session.step = "online_buttons";
+        session.step = "online_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
@@ -1801,7 +1801,7 @@ bot.on("callback_query:data", async (ctx) => {
             callback_data: "buy_10_powertest_eur",
           }),
         });
-        session.step = "online_buttons";
+        session.step = "online_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "handstand") {
         console.log("Отправляю тарифы");
@@ -1868,6 +1868,7 @@ bot.on("callback_query:data", async (ctx) => {
     );
   } else if (action.startsWith("testday")) {
     const buttonText = action.split(",")[1];
+    console.log(`Выбрал дату онлайн тренировки 1 - ${buttonText}`);
     const date = buttonText.match(/\(([^)]+)\)/);
     const str = JSON.stringify(date[1]);
     const str5 = JSON.parse(str);
