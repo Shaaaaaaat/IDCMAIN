@@ -738,6 +738,10 @@ const buttonsData = {
         text: "36 занятий (23 400₽) — действует 14 недель",
         callback_data: "buy_23400_ds_rub",
       },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
       // {
       //   text: "Подписка 8 400₽ / месяц",
       //   callback_data: "buy_8400_ds_rub",
