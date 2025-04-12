@@ -1666,7 +1666,7 @@ bot.on("callback_query:data", async (ctx) => {
     }
   }
 
-  if (action === "deposit") {
+  if (action === "deposit" || action === "deposit_ds_12") {
     console.log("Нажал кнопку пополнить депозит");
     // Проверяем, существует ли сессия
     let session = await Session.findOne({ userId: ctx.from.id.toString() });
@@ -2080,7 +2080,7 @@ bot.on("message:text", async (ctx) => {
       await ctx.reply("Не удалось получить информацию о пользователе.");
       return;
     }
-
+    const tag = userInfo?.tag || "Отсутствует";
     const paymentId = generateUniqueId();
     const paymentLink = generatePaymentLink(paymentId, sum, userInfo.email);
     await ctx.reply(`Отлично! Перейдите по ссылке для оплаты: ${paymentLink}`);
@@ -2091,7 +2091,7 @@ bot.on("message:text", async (ctx) => {
       paymentId,
       sum,
       0,
-      "deposit",
+      tag,
       "deposit",
       ctx.from.username
     );
