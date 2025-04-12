@@ -640,6 +640,10 @@ const buttonsData = {
         text: "Сплит на троих (6 000₽) — действует 4 недели",
         callback_data: "buy_6000_personal_mscycg",
       },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
     ],
     MSCELF: [
       {
@@ -657,6 +661,10 @@ const buttonsData = {
       {
         text: "Сплит на троих (6 000₽) — действует 4 недели",
         callback_data: "buy_6000_personal_mscelf",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
       },
     ],
     SPBSPI: [
@@ -676,6 +684,10 @@ const buttonsData = {
         text: "Сплит на троих (6 000₽) — действует 4 недели",
         callback_data: "buy_6000_personal_spbspi",
       },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
     ],
     SPBRTC: [
       {
@@ -694,6 +706,10 @@ const buttonsData = {
         text: "Сплит на троих (6 000₽) — действует 4 недели",
         callback_data: "buy_6000_personal_spbrtc",
       },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
     ],
     SPBHKC: [
       {
@@ -711,6 +727,10 @@ const buttonsData = {
       {
         text: "Сплит на троих (6 000₽) — действует 4 недели",
         callback_data: "buy_6000_personal_spbhkc",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
       },
     ],
     YVNGFG: [
