@@ -1754,13 +1754,15 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply(
           "Спасибо! Какой картой вам будет удобнее оплатить курс?",
           {
-            reply_markup: new InlineKeyboard()
-              .add({ text: "Российской картой", callback_data: "russian_card" })
-              .row()
-              .add({
-                text: "Зарубежной картой",
-                callback_data: "foreign_card",
-              }),
+            reply_markup: new InlineKeyboard().add({
+              text: "Российской картой",
+              callback_data: "russian_card",
+            }),
+            // .row()
+            // .add({
+            //   text: "Зарубежной картой",
+            //   callback_data: "foreign_card",
+            // }),
           }
         );
         session.step = "awaiting_card_type";
