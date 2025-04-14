@@ -2113,7 +2113,7 @@ bot.on("message:text", async (ctx) => {
       paymentId,
       sum,
       0,
-      tag,
+      "deposit",
       "deposit",
       ctx.from.username
     );
