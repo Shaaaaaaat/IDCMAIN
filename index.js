@@ -903,9 +903,9 @@ function generateKeyboard(tag) {
   let keyboard = new InlineKeyboard();
   console.log("Отправляю кнопки для оплаты");
 
-  if (tag === "ds_rub") {
+  if (tag.includes("ds") && tag.includes("rub")) {
     buttonsData.ds.RUB.forEach((button) => keyboard.add(button).row());
-  } else if (tag === "ds_eur") {
+  } else if (tag.includes("ds") && tag.includes("eur")) {
     buttonsData.ds.EUR.forEach((button) => keyboard.add(button).row());
   } else if (tag === "MSC_group_YCG") {
     buttonsData.group.MSCYCG.forEach((button) => keyboard.add(button).row());
@@ -2002,6 +2002,7 @@ bot.on("callback_query:data", async (ctx) => {
       const session = await Session.findOne({ userId: tgId.toString() });
       if (userInfo) {
         const { tag, currency } = userInfo;
+        console.log(tag);
         const keyboard = generateKeyboard(tag);
         if (keyboard) {
           await ctx.reply(
