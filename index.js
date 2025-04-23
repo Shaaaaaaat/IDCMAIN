@@ -762,10 +762,10 @@ const buttonsData = {
         text: "Пополнить депозит (любая сумма)",
         callback_data: "deposit",
       },
-      {
-        text: "Подписка 8 400₽ / месяц",
-        callback_data: "buy_8400_ds_rub",
-      },
+      // {
+      //   text: "Подписка 8 400₽ / месяц",
+      //   callback_data: "buy_8400_ds_rub",
+      // },
     ],
     EUR: [
       {
