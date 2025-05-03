@@ -414,6 +414,13 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
+  buy_7800_ds_rub: {
+    sum: 7800,
+    lessons: 12,
+    tag: "ds_rub",
+    currency: "RUB",
+    paymentSystem: "robokassa",
+  },
   buy_8400_ds_rub: {
     sum: 8400,
     lessons: 1,
@@ -1835,10 +1842,20 @@ bot.on("callback_query:data", async (ctx) => {
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard().add({
-            text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
-            callback_data: "buy_950_powertest_ru",
-          }),
+          reply_markup: new InlineKeyboard()
+            // .add({
+            //   text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
+            //   callback_data: "buy_950_powertest_ru",
+            // })
+            .add({
+              text: "2 тренировки по цене 1 - 950₽",
+              callback_data: "buy_950_powertest_ru",
+            })
+            .row()
+            .add({
+              text: "Абонемент на 12 занятий - 7800₽ вместо 9600₽",
+              callback_data: "buy_7800_ds_rub",
+            }),
         });
         session.step = "oonline_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
