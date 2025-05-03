@@ -1372,7 +1372,7 @@ bot.command("start", async (ctx) => {
               })
               .row()
               .add({
-                text: "Подтягивания для девушек",
+                text: "💃🏻 Подтягивания для девушек",
                 callback_data: "pullups_for_ladies",
               })
               .row()
@@ -1553,7 +1553,7 @@ bot.on("callback_query:data", async (ctx) => {
         })
         .row()
         .add({
-          text: "Подтягивания для девушек",
+          text: "💃🏻 Подтягивания для девушек",
           callback_data: "pullups_for_ladies",
         })
         .row()
