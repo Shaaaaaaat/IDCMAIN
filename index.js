@@ -417,7 +417,7 @@ const actionData = {
   buy_7800_ds_rub: {
     sum: 7800,
     lessons: 12,
-    tag: "ds_rub",
+    tag: "ds_rub_start",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
