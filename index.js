@@ -1372,7 +1372,7 @@ bot.command("start", async (ctx) => {
               })
               .row()
               .add({
-                text: "💃🏻 Подтягивания для девушек",
+                text: "Подтягивания для девушек",
                 callback_data: "pullups_for_ladies",
               })
               .row()
@@ -1842,20 +1842,19 @@ bot.on("callback_query:data", async (ctx) => {
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
-          reply_markup: new InlineKeyboard()
-            // .add({
-            //   text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
-            //   callback_data: "buy_950_powertest_ru",
-            // })
-            .add({
-              text: "2 тренировки по цене 1 - 950₽",
-              callback_data: "buy_950_powertest_ru",
-            })
-            .row()
-            .add({
-              text: "Абонемент на 12 занятий - 7800₽",
-              callback_data: "buy_7800_ds_rub",
-            }),
+          reply_markup: new InlineKeyboard().add({
+            text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
+            callback_data: "buy_950_powertest_ru",
+          }),
+          // .add({
+          //   text: "2 тренировки по цене 1 - 950₽",
+          //   callback_data: "buy_950_powertest_ru",
+          // })
+          // .row()
+          // .add({
+          //   text: "Абонемент на 12 занятий - 7800₽",
+          //   callback_data: "buy_7800_ds_rub",
+          // }),
         });
         session.step = "oonline_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
