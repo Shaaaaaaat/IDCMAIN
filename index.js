@@ -523,6 +523,22 @@ const actionData = {
     paymentSystem: "robokassa",
     studio: "super_calisthenics",
   },
+  buy_1900_light_start_ru: {
+    sum: 1900,
+    lessons: 2,
+    tag: "ds_rub_calisthenics_light_start",
+    currency: "RUB",
+    paymentSystem: "robokassa",
+    studio: "calisthenics_light",
+  },
+  buy_9600_light_start_ru: {
+    sum: 9600,
+    lessons: 12,
+    tag: "ds_rub_calisthenics_light_start",
+    currency: "RUB",
+    paymentSystem: "robokassa",
+    studio: "calisthenics_light",
+  },
   buy_10_powertest_eur: {
     sum: 10,
     lessons: 1,
@@ -1369,7 +1385,7 @@ bot.command("start", async (ctx) => {
               })
               .row()
               .add({
-                text: "Super Calisthenics (для продвинутых)",
+                text: "Super Calisthenics (под ключ)",
                 callback_data: "super_calisthenics",
               })
               .row()
@@ -1829,16 +1845,38 @@ bot.on("callback_query:data", async (ctx) => {
       console.log("Выбрали россискую карту, отправляю тарифы");
       // Получаем данные студии из сессии и telegram_id
 
-      if (
-        session.studio === "super_calisthenics" ||
-        session.studio === "calisthenics_light"
-      ) {
+      if (session.studio === "calisthenics_light") {
+        console.log("Отправляю тарифы");
+        await ctx.reply("Выберите подходящий тариф для оплаты:", {
+          reply_markup: new InlineKeyboard()
+            .add({
+              text: "Тестовый старт (2 тренировки) - 1900₽ | доступ 4 недели",
+              callback_data: "buy_1900_light_start_ru",
+            })
+            .row()
+            .add({
+              text: "Абонемент на 12 занятий - 9600₽ | доступ 6 недель",
+              callback_data: "buy_9600_light_start_ru",
+            }),
+        });
+        session.step = "online_buttons_ds_start";
+        await session.save(); // Сохранение сессии после изменения шага
+      } else if (session.studio === "super_calisthenics") {
         console.log("Отправляю тарифы");
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard().add({
             text: "Пробное (тест-силы) 950₽ - доступ 4 недели",
             callback_data: "buy_950_powertest_ru",
           }),
+          // .add({
+          //   text: "2 тренировки по цене 1 - 950₽",
+          //   callback_data: "buy_950_powertest_ru",
+          // })
+          // .row()
+          // .add({
+          //   text: "Абонемент на 12 занятий - 7800₽",
+          //   callback_data: "buy_7800_ds_rub",
+          // }),
         });
         session.step = "online_buttons_ds_start";
         await session.save(); // Сохранение сессии после изменения шага
