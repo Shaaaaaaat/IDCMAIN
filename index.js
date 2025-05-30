@@ -1392,12 +1392,12 @@ bot.command("start", async (ctx) => {
               .add({
                 text: "Подтягивания для девушек",
                 callback_data: "pullups_for_ladies",
-              })
-              .row()
-              .add({
-                text: "Стойка на руках",
-                callback_data: "handstand",
               }),
+            // .row()
+            // .add({
+            //   text: "Стойка на руках",
+            //   callback_data: "handstand",
+            // }),
           }
         );
       } else if (startParam === "offline") {
@@ -1574,12 +1574,12 @@ bot.on("callback_query:data", async (ctx) => {
         .add({
           text: "💃🏻 Подтягивания для девушек",
           callback_data: "pullups_for_ladies",
-        })
-        .row()
-        .add({
-          text: "Стойка на руках",
-          callback_data: "handstand",
         }),
+      // .row()
+      // .add({
+      //   text: "Стойка на руках",
+      //   callback_data: "handstand",
+      // }),
     });
   }
 
@@ -2511,12 +2511,12 @@ bot.on("message:text", async (ctx) => {
         .add({
           text: "Подтягивания для девушек",
           callback_data: "pullups_for_ladies",
-        })
-        .row()
-        .add({
-          text: "Стойка на руках»",
-          callback_data: "handstand",
         }),
+      // .row()
+      // .add({
+      //   text: "Стойка на руках»",
+      //   callback_data: "handstand",
+      // }),
     });
   } else if (userMessage === "Назад") {
     console.log("Нажал на кнопку - Назад");
