@@ -1850,12 +1850,12 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard()
             .add({
-              text: "Тестовый старт (2 тренировки) - 1400₽ | доступ 4 недели",
+              text: "Тестовый старт, 2 тренировки - 1400₽",
               callback_data: "buy_1900_light_start_ru",
             })
             .row()
             .add({
-              text: "Абонемент на 12 занятий - 9600₽ | доступ 6 недель",
+              text: "Абонемент на 12 занятий - 9600₽",
               callback_data: "buy_9600_light_start_ru",
             }),
         });
