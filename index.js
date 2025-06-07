@@ -524,7 +524,7 @@ const actionData = {
     studio: "super_calisthenics",
   },
   buy_1900_light_start_ru: {
-    sum: 1400,
+    sum: 1900,
     lessons: 2,
     tag: "ds_rub_calisthenics_light_start",
     currency: "RUB",
@@ -1850,7 +1850,7 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply("Выберите подходящий тариф для оплаты:", {
           reply_markup: new InlineKeyboard()
             .add({
-              text: "Тестовый старт, 2 тренировки - 1400₽",
+              text: "Тестовый старт, 2 тренировки - 1900₽",
               callback_data: "buy_1900_light_start_ru",
             })
             .row()
