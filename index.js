@@ -1414,6 +1414,15 @@ bot.command("start", async (ctx) => {
               .add({ text: "Ереван", callback_data: "city_yerevan" }),
           }
         );
+      } else if (startParam === "pullups") {
+        console.log("Пользователь пришел по URL для pullups.");
+        // Покажите начальное меню для offline
+        await ctx.reply("Привет! Нажмите на кнопку ниже:", {
+          reply_markup: new InlineKeyboard().add({
+            text: "Подтягивания для девушек",
+            callback_data: "pullups_for_ladies",
+          }),
+        });
       } else {
         // Если параметр не указан или не распознан
         console.log("Не понятно откуда пришел, загружаю расширенное меню.");
