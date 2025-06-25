@@ -1409,17 +1409,17 @@ bot.command("start", async (ctx) => {
               })
               .row()
               .add({
-                text: "Super Calisthenics (под ключ)",
+                text: "💪🏻 Super Calisthenics (для продвинутых)",
                 callback_data: "super_calisthenics",
               })
               .row()
               .add({
-                text: "Подтягивания для девушек",
+                text: "💃🏻 Подтягивания для девушек",
                 callback_data: "pullups_for_ladies",
               })
               .row()
               .add({
-                text: "Стойка на руках",
+                text: "🤸🏻‍♂️ Стойка на руках",
                 callback_data: "handstand",
               }),
           }
@@ -1600,7 +1600,7 @@ bot.on("callback_query:data", async (ctx) => {
         })
         .row()
         .add({
-          text: "Super Calisthenics (для продвинутых)",
+          text: "💪🏻 Super Calisthenics (для продвинутых)",
           callback_data: "super_calisthenics",
         })
         .row()
@@ -1610,7 +1610,7 @@ bot.on("callback_query:data", async (ctx) => {
         })
         .row()
         .add({
-          text: "Стойка на руках",
+          text: "🤸🏻‍♂️ Стойка на руках",
           callback_data: "handstand",
         }),
     });
