@@ -1414,7 +1414,7 @@ bot.command("start", async (ctx) => {
               })
               .row()
               .add({
-                text: "💃🏻 Подтягивания для девушек",
+                text: "🖐🏻 Подтягивания с нуля",
                 callback_data: "pullups_for_ladies",
               })
               .row()
@@ -1443,7 +1443,7 @@ bot.command("start", async (ctx) => {
         // Покажите начальное меню для offline
         await ctx.reply("Привет! Нажмите на кнопку ниже:", {
           reply_markup: new InlineKeyboard().add({
-            text: "Подтягивания для девушек",
+            text: "🖐🏻 Подтягивания с нуля",
             callback_data: "pullups_for_ladies",
           }),
         });
@@ -1605,7 +1605,7 @@ bot.on("callback_query:data", async (ctx) => {
         })
         .row()
         .add({
-          text: "💃🏻 Подтягивания для девушек",
+          text: "🖐🏻 Подтягивания с нуля",
           callback_data: "pullups_for_ladies",
         })
         .row()
@@ -2542,7 +2542,7 @@ bot.on("message:text", async (ctx) => {
         })
         .row()
         .add({
-          text: "Подтягивания для девушек",
+          text: "🖐🏻 Подтягивания с нуля",
           callback_data: "pullups_for_ladies",
         })
         .row()
