@@ -486,7 +486,7 @@ const actionData = {
   buy_1900_handstand_start_ru: {
     sum: 1900,
     lessons: 2,
-    tag: "handstand",
+    tag: "ds_rub_handstand_start",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "handstand",
@@ -494,7 +494,7 @@ const actionData = {
   buy_4800_handstand_start_ru: {
     sum: 4800,
     lessons: 6,
-    tag: "handstand",
+    tag: "ds_rub_handstand_start",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "handstand",
@@ -510,7 +510,7 @@ const actionData = {
   buy_1900_pullups_start_ru: {
     sum: 1900,
     lessons: 2,
-    tag: "pullups_for_ladies",
+    tag: "ds_rub_pullups_start",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "pullups_for_ladies",
@@ -518,7 +518,7 @@ const actionData = {
   buy_4800_pullups_start_ru: {
     sum: 4800,
     lessons: 6,
-    tag: "pullups_for_ladies",
+    tag: "ds_rub_pullups_start",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "pullups_for_ladies",
