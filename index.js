@@ -1447,6 +1447,33 @@ bot.command("start", async (ctx) => {
             callback_data: "pullups_for_ladies",
           }),
         });
+      } else if (startParam === "super") {
+        console.log("Пользователь пришел по URL для super_calisthenics.");
+        // Покажите начальное меню для offline
+        await ctx.reply("Привет! Нажмите на кнопку ниже:", {
+          reply_markup: new InlineKeyboard().add({
+            text: "🚀 Super Calisthenics",
+            callback_data: "super_calisthenics",
+          }),
+        });
+      } else if (startParam === "light") {
+        console.log("Пользователь пришел по URL для calisthenics_light.");
+        // Покажите начальное меню для offline
+        await ctx.reply("Привет! Нажмите на кнопку ниже:", {
+          reply_markup: new InlineKeyboard().add({
+            text: "💫 Calisthenics light",
+            callback_data: "calisthenics_light",
+          }),
+        });
+      } else if (startParam === "handstand") {
+        console.log("Пользователь пришел по URL для handstand.");
+        // Покажите начальное меню для offline
+        await ctx.reply("Привет! Нажмите на кнопку ниже:", {
+          reply_markup: new InlineKeyboard().add({
+            text: "🤸🏻‍♂️ Стойка на руках",
+            callback_data: "handstand",
+          }),
+        });
       } else {
         // Если параметр не указан или не распознан
         console.log("Не понятно откуда пришел, загружаю расширенное меню.");
