@@ -1522,13 +1522,15 @@ bot.on("callback_query:data", async (ctx) => {
       city = "Санкт-Петербург";
       console.log("Выбрал Питер, отправил список студий");
       // Кнопки для студий в Санкт-Петербурге
-      studiosKeyboard = new InlineKeyboard()
-        .add({ text: "м. Выборгская", callback_data: "studio_hkc" })
-        .row()
-        .add({
-          text: "м. Московские Ворота",
-          callback_data: "studio_spi",
-        });
+      studiosKeyboard = new InlineKeyboard().add({
+        text: "м. Выборгская",
+        callback_data: "studio_hkc",
+      });
+      // .row()
+      // .add({
+      //   text: "м. Московские Ворота",
+      //   callback_data: "studio_spi",
+      // });
     } else if (action === "city_yerevan") {
       city = "Ереван";
       console.log("Выбрал Ереван, отправил список студий");
@@ -2599,11 +2601,11 @@ bot.on("message:text", async (ctx) => {
     } else if (session.city === "Санкт-Петербург") {
       studiosKeyboard = new InlineKeyboard()
         .add({ text: "м. Выборгская", callback_data: "studio_hkc" })
-        .row()
-        .add({
-          text: "м. Московские Ворота",
-          callback_data: "studio_spi",
-        })
+        // .row()
+        // .add({
+        //   text: "м. Московские Ворота",
+        //   callback_data: "studio_spi",
+        // })
         .row()
         .add({ text: "Поменять город", callback_data: "change_city" });
     } else if (session.city === "Ереван") {
