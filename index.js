@@ -1,11 +1,25 @@
 require("dotenv").config();
-const { Bot, InlineKeyboard, Keyboard, session } = require("grammy");
-const express = require("express");
-const bodyParser = require("body-parser");
+process.on("unhandledRejection", (e) =>
+  console.error("unhandledRejection:", e)
+);
+process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
+
+const { Bot, InlineKeyboard, Keyboard } = require("grammy");
 const crypto = require("crypto");
 const stripe = require("stripe")(process.env.STRIPE_KEY); // Добавьте эту строку
 const fs = require("fs");
 const axios = require("axios");
+
+const axiosRetry = require("axios-retry");
+axiosRetry(axios, {
+  retries: 3,
+  retryDelay: axiosRetry.exponentialDelay,
+  shouldResetTimeout: true,
+  retryCondition: (err) =>
+    axiosRetry.isNetworkOrIdempotentRequestError(err) ||
+    [429, 500, 502, 503, 504].includes(err?.response?.status),
+});
+
 const connectDB = require("./database");
 const Session = require("./sessionModel");
 
@@ -158,14 +172,6 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const RECIPIENTS_BY_STUDIO = {
-  "м. 1905г.": ["-4510303967", "346342296"], // Замените ID на реальные для этой студии
-  "м. Петроградская": ["-4510303967", "468995031"],
-  "м. Выборгская": ["-4510303967", "582033795"],
-  "м. Московские Ворота": ["-4510303967", "206607601"],
-  "ул. Бузанда": ["-4510303967", "256168227"],
-};
-
 const actionData = {
   buy_13200_msc_ycg: {
     sum: 13200,
@@ -251,22 +257,22 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_11400_spb_spi: {
-    sum: 11400,
+  buy_13200_spb_spi: {
+    sum: 13200,
     lessons: 12,
     tag: "SPB_group_SPI_long",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_9600_spb_spi: {
-    sum: 9600,
+  buy_11400_spb_spi: {
+    sum: 11400,
     lessons: 12,
     tag: "SPB_group_SPI_short",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_1100_spb_spi: {
-    sum: 1100,
+  buy_1400_spb_spi: {
+    sum: 1400,
     lessons: 1,
     tag: "SPB_group_SPI",
     currency: "RUB",
@@ -433,7 +439,7 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_105_ds_eur: {
+  buy_108_ds_eur: {
     sum: 108,
     lessons: 12,
     tag: "ds_eur",
@@ -441,7 +447,7 @@ const actionData = {
     paymentSystem: "stripeEUR",
     studio: "super_calisthenics",
   },
-  buy_249_ds_eur: {
+  buy_252_ds_eur: {
     sum: 252,
     lessons: 36,
     tag: "ds_eur",
@@ -521,7 +527,7 @@ const actionData = {
     paymentSystem: "robokassa",
     studio: "pullups_for_ladies",
   },
-  buy_99_pullups_eur: {
+  buy_84_pullups_eur: {
     sum: 84,
     lessons: 1,
     tag: "pullups_for_ladies",
@@ -604,16 +610,16 @@ const buttonsData = {
     ],
     SPBSPI: [
       {
-        text: "12 занятий (11 400₽) — действует 8 недель",
+        text: "12 занятий (13 200₽) — действует 8 недель",
+        callback_data: "buy_13200_spb_spi",
+      },
+      {
+        text: "12 занятий (11 400₽) — действует 4 недели",
         callback_data: "buy_11400_spb_spi",
       },
       {
-        text: "12 занятий (9 600₽) — действует 4 недели",
-        callback_data: "buy_9600_spb_spi",
-      },
-      {
-        text: "1 занятие (1 100₽) — действует 4 недели",
-        callback_data: "buy_1100_spb_spi",
+        text: "1 занятие (1 400₽) — действует 4 недели",
+        callback_data: "buy_1400_spb_spi",
       },
       {
         text: "Пополнить депозит (любая сумма)",
@@ -814,12 +820,12 @@ const buttonsData = {
     ],
     EUR: [
       {
-        text: "12 занятий (105€) — действует 6 недель",
-        callback_data: "buy_105_ds_eur",
+        text: "12 занятий (108€) — действует 6 недель",
+        callback_data: "buy_108_ds_eur",
       },
       {
-        text: "36 занятий (249€) — действует 14 недель",
-        callback_data: "buy_249_ds_eur",
+        text: "36 занятий (252€) — действует 14 недель",
+        callback_data: "buy_252_ds_eur",
       },
     ],
   },
@@ -890,7 +896,7 @@ function getPriceAndSchedule(studio) {
     "м. Выборгская":
       "Адрес студии м. Выборгская.:\nМалый Сампсониевский пр., дом 2\n\n🔻 Расписание занятий:\nПонедельник 20:30\nСреда 20:30\nСуббота 14:00\n\n🔻 Стоимость тренировок:\n👉🏻Пробное - 950₽ (действует 4 недели)\n👉🏻12 занятий - 9600₽(действует 4 недели)\n👉🏻12 занятий - 11400₽ (действует 8 недель)\n👉🏻1 занятие - 1100₽ (действует 4 недели)\n\n🔻 Цены индивидуальных тренировок:\n1 тренировка (1 чел.) - 3600₽ за занятие\n1 тренировка (2 чел.) - 5000₽ за занятие\n1 тренировка (3 чел.) - 6000₽ за занятие",
     "м. Московские Ворота":
-      "Адрес студии м. Московские Ворота.:\nУл. Заставская, 33П\n\n🔻 Расписание занятий:\nВторник 20:40\nЧетверг 20:40\nСуббота 14:00\n\n🔻 Стоимость тренировок:\n👉🏻Пробное - 950₽ (действует 4 недели)\n👉🏻12 занятий - 9600₽ (действует 4 недели)\n👉🏻12 занятий - 11400₽ (действует 8 недель)\n👉🏻1 занятие - 1100₽ (действует 4 недели)\n\n🔻 Цены индивидуальных тренировок:\n1 тренировка (1 чел.) - 3600₽ за занятие\n1 тренировка (2 чел.) - 5000₽ за занятие\n1 тренировка (3 чел.) - 6000₽ за занятие",
+      "Адрес студии м. Московские Ворота.:\nУл. Заставская, 33П\n\n🔻 Расписание занятий:\nВторник 20:40\nЧетверг 20:40\nСуббота 14:00\n\n🔻 Стоимость тренировок:\n👉🏻Пробное - 950₽ (действует 4 недели)\n👉🏻12 занятий - 11400₽ (действует 4 недели)\n👉🏻12 занятий - 13200₽ (действует 8 недель)\n👉🏻1 занятие - 1400₽ (действует 4 недели)\n\n🔻 Цены индивидуальных тренировок:\n1 тренировка (1 чел.) - 3600₽ за занятие\n1 тренировка (2 чел.) - 5000₽ за занятие\n1 тренировка (3 чел.) - 6000₽ за занятие",
     "ул. Бузанда":
       "Адрес студии на ул. Бузанда.:\nУл. Павстоса Бузанда, 1/3\n\n🔻 Расписание занятий:\nПонедельник 08:30 (утро) \nСреда 08:30 (утро) \nПятница 08:30 (утро) \n\n🔻 Стоимость тренировок:\n👉🏻Пробное - 5000դր. (действует 4 недели)\n👉🏻12 занятий - 60000դր. (действует 8 недель)\n👉🏻1 занятие - 7000դր. (действует 4 недели)\n\n🔻 Цены индивидуальных тренировок:\n1 тренировка (1 чел.) - 12500դր. за занятие\n1 тренировка (2 чел.) - 17000դր. за занятие\n1 тренировка (3 чел.) - 21000դր. за занятие",
     calisthenics_light:
@@ -914,7 +920,7 @@ async function getUserInfo(tgId) {
   const baseId = process.env.AIRTABLE_BASE_ID;
   const clientsId = process.env.AIRTABLE_CLIENTS_ID;
 
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
+  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}=${tgId}`;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
   };
@@ -1049,7 +1055,7 @@ async function checkUserInAirtable(tgId) {
   const baseId = process.env.AIRTABLE_BASE_ID;
   const clientsId = process.env.AIRTABLE_CLIENTS_ID;
 
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
+  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}=${tgId}`;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
   };
@@ -1211,7 +1217,7 @@ async function sendDateToAirtable(tgId, date) {
 
   try {
     // Шаг 1: Найти запись по tgId
-    const searchUrl = `${url}?filterByFormula={tgId}='${tgId}'`;
+    const searchUrl = `${url}?filterByFormula={tgId}=${tgId}`;
     const searchResponse = await axios.get(searchUrl, { headers });
     const records = searchResponse.data.records;
 
@@ -1280,7 +1286,7 @@ async function sendDateToAirtable2(tgId, date) {
 
   try {
     // Шаг 1: Найти запись по tgId
-    const searchUrl = `${url}?filterByFormula={tgId}='${tgId}'`;
+    const searchUrl = `${url}?filterByFormula={tgId}=${tgId}`;
     const searchResponse = await axios.get(searchUrl, { headers });
     const records = searchResponse.data.records;
 
@@ -1346,10 +1352,6 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag) {
     );
   }
 }
-
-// Создаем и настраиваем Express-приложение
-const app = express();
-app.use(bodyParser.json()); // Используем JSON для обработки запросов от Telegram и Робокассы
 
 // Обработчик команд бота
 bot.command("start", async (ctx) => {
@@ -1494,8 +1496,22 @@ bot.command("start", async (ctx) => {
 
 // Обработчик выбора города
 bot.on("callback_query:data", async (ctx) => {
+  try {
+    await ctx.answerCallbackQuery();
+  } catch (e) {}
+
   const action = ctx.callbackQuery.data;
-  const session = await Session.findOne({ userId: ctx.from.id.toString() });
+
+  let session = await Session.findOne({ userId: ctx.from.id.toString() });
+  if (!session) {
+    // вариант А: создаём пустую сессию
+    session = new Session({
+      userId: ctx.from.id.toString(),
+      step: "start",
+      userState: {},
+    });
+    await session.save();
+  }
 
   if (
     action === "city_moscow" ||
@@ -1520,15 +1536,16 @@ bot.on("callback_query:data", async (ctx) => {
       city = "Санкт-Петербург";
       console.log("Выбрал Питер, отправил список студий");
       // Кнопки для студий в Санкт-Петербурге
-      studiosKeyboard = new InlineKeyboard().add({
-        text: "м. Выборгская",
-        callback_data: "studio_hkc",
-      });
-      // .row()
-      // .add({
-      //   text: "м. Московские Ворота",
-      //   callback_data: "studio_spi",
-      // });
+      studiosKeyboard = new InlineKeyboard()
+        .add({
+          text: "м. Выборгская",
+          callback_data: "studio_hkc",
+        })
+        .row()
+        .add({
+          text: "м. Московские Ворота",
+          callback_data: "studio_spi",
+        });
     } else if (action === "city_yerevan") {
       city = "Ереван";
       console.log("Выбрал Ереван, отправил список студий");
@@ -1791,7 +1808,6 @@ bot.on("callback_query:data", async (ctx) => {
     session.userState = { awaitingDeposit: true };
     await session.save();
     await ctx.reply("Введите сумму депозита:");
-    await ctx.answerCallbackQuery();
     return;
   } else if (action === "edit_info") {
     console.log("Изменение данных (ФИ, тел., email)");
@@ -1919,7 +1935,7 @@ bot.on("callback_query:data", async (ctx) => {
               callback_data: "buy_4800_light_start_ru",
             }),
         });
-        session.step = "online_buttons_ds_start";
+        session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "super_calisthenics") {
         console.log("Отправляю тарифы");
@@ -1935,7 +1951,7 @@ bot.on("callback_query:data", async (ctx) => {
               callback_data: "buy_4800_super_start_ru",
             }),
         });
-        session.step = "online_buttons_ds_start";
+        session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
@@ -1951,7 +1967,7 @@ bot.on("callback_query:data", async (ctx) => {
               callback_data: "buy_4800_pullups_start_ru",
             }),
         });
-        session.step = "online_buttons_ds_start";
+        session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "handstand") {
         console.log("Отправляю тарифы");
@@ -1983,7 +1999,7 @@ bot.on("callback_query:data", async (ctx) => {
             callback_data: "buy_10_powertest_eur",
           }),
         });
-        session.step = "online_buttons_ds_start";
+        session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "pullups_for_ladies") {
         console.log("Отправляю тарифы");
@@ -1993,7 +2009,7 @@ bot.on("callback_query:data", async (ctx) => {
             callback_data: "buy_10_powertest_eur",
           }),
         });
-        session.step = "online_buttons_ds_start";
+        session.step = "online_buttons";
         await session.save(); // Сохранение сессии после изменения шага
       } else if (session.studio === "handstand") {
         console.log("Отправляю тарифы");
@@ -2010,9 +2026,14 @@ bot.on("callback_query:data", async (ctx) => {
   } else if (session.step === "online_buttons") {
     console.log("генерирую ссылку для оплаты после нажатия кнопки с тарифом");
     // Генерация ссылки для оплаты
-    const actionInfo = actionData[ctx.callbackQuery.data];
+    const key = ctx.callbackQuery.data;
+    const actionInfo = actionData[key];
+    if (!actionInfo) {
+      await ctx.reply("Неверная или устаревшая кнопка. Попробуйте ещё раз.");
+      return;
+    }
     const { paymentLink, paymentId } = await generateSecondPaymentLink(
-      action,
+      key,
       session.email
     );
 
@@ -2200,7 +2221,7 @@ bot.on("message:text", async (ctx) => {
   if (!session) {
     console.log(`Сессия не найдена для пользователя ${tgId}. Создаём новую.`);
     session = new Session({
-      userId: tgId,
+      userId: tgId.toString(),
       step: "start_сlient",
       userState: {},
     });
@@ -2254,8 +2275,6 @@ bot.on("message:text", async (ctx) => {
       "Спасибо! Я свяжусь с тренером и подберу для вас удобное время. Как только согласуем все детали, по ссылке ниже можно будет оплатить занятие для подтверждения записи. Ожидайте, скоро вернусь с новостями 😊"
     );
 
-    // Получаем список адресатов для этой студии
-    const recipients = RECIPIENTS_BY_STUDIO[session.studio] || []; // Берем студию из сессии
     const username = ctx.from.username ? `@${ctx.from.username}` : "Без ника"; // Определяем никнейм пользователя или заменяем на "Без ника"
 
     // Отправляем сообщение каждому адресату из списка для этой студии
@@ -2265,10 +2284,7 @@ bot.on("message:text", async (ctx) => {
         `Запрос на персональную тренировку от ${username}\nГород: ${city} & Студия: ${place}:\n${ctx.message.text}`
       );
     } catch (error) {
-      console.error(
-        `Не удалось отправить сообщение пользователю ${recipientId}:`,
-        error
-      );
+      console.error("Не удалось отправить сообщение в служебный чат:", error);
       // Можно добавить дополнительные действия, например:
       // - логирование ошибки в базе данных
       // - уведомление администратора о проблеме
@@ -2339,52 +2355,41 @@ bot.on("message:text", async (ctx) => {
       case "/group":
         console.log("Переключил на /group");
         await ctx.reply("Переключено на групповые тренировки.", {
-          reply_markup: {
-            keyboard: new Keyboard()
-              .text("Узнать баланс")
-              .text("Купить групповые тренировки")
-              .row() // Перенос на новую строку
-              .text("Дата окончания")
-              .text("Команды") // Вторая строка
-              .build(),
-            resize_keyboard: true,
-          },
+          reply_markup: new Keyboard()
+            .text("Узнать баланс")
+            .text("Купить групповые тренировки")
+            .row()
+            .text("Дата окончания")
+            .text("Команды")
+            .resized(), // = resize_keyboard: true
         });
         break;
       case "/personal":
         console.log("Переключил на /personal");
         await ctx.reply("Переключено на персональные тренировки.", {
-          reply_markup: {
-            keyboard: new Keyboard()
-              .text("Узнать баланс")
-              .text("Купить персональные тренировки")
-              .row() // Перенос на новую строку
-              .text("Дата окончания")
-              .text("Команды") // Вторая строка
-              .build(),
-            resize_keyboard: true,
-          },
+          reply_markup: new Keyboard()
+            .text("Узнать баланс")
+            .text("Купить персональные тренировки")
+            .row() // Перенос на новую строку
+            .text("Дата окончания")
+            .text("Команды") // Вторая строка
+            .resized(), // = resize_keyboard: true
         });
         break;
       case "/online":
         console.log("Переключил на /online");
         await ctx.reply("Переключено на онлайн тренировки.", {
-          reply_markup: {
-            keyboard: new Keyboard()
-              .text("Узнать баланс")
-              .text("Купить онлайн тренировки")
-              .row() // Перенос на новую строку
-              .text("Дата окончания")
-              .text("Команды") // Вторая строка
-              .build(),
-            resize_keyboard: true,
-          },
+          reply_markup: new Keyboard()
+            .text("Узнать баланс")
+            .text("Купить онлайн тренировки")
+            .row() // Перенос на новую строку
+            .text("Дата окончания")
+            .text("Команды") // Вторая строка
+            .resized(), // = resize_keyboard: true
         });
         break;
       case "/reschedule":
         console.log("Вызвал /reschedule");
-
-        const tgId = ctx.from.id;
         const result = await getUserInfo(tgId);
 
         if (result.balance <= 0) {
@@ -2393,8 +2398,7 @@ bot.on("message:text", async (ctx) => {
           return; // ⬅️ Останавливаем выполнение дальше
         } else if (result.balance === 950) {
           const tag = result.tag;
-          const telegramId = ctx.from.id; // ID пользователя Telegram
-          await resendToWebhook(tag, telegramId);
+          await resendToWebhook(tag, tgId);
         }
         break;
       case "/operator":
@@ -2461,6 +2465,13 @@ bot.on("message:text", async (ctx) => {
     const tgId = ctx.from.id;
     const userInfo = await getUserInfo(tgId);
     console.log("нажал купить онлайн тренировки");
+
+    if (!userInfo) {
+      await ctx.reply(
+        "Не удалось получить информацию о вашем теге. Попробуйте позже."
+      );
+      return;
+    }
 
     if (userInfo.tag.includes("ds") && userInfo.tag.includes("rub")) {
       const keyboard = generateKeyboard("ds_rub");
@@ -2599,11 +2610,11 @@ bot.on("message:text", async (ctx) => {
     } else if (session.city === "Санкт-Петербург") {
       studiosKeyboard = new InlineKeyboard()
         .add({ text: "м. Выборгская", callback_data: "studio_hkc" })
-        // .row()
-        // .add({
-        //   text: "м. Московские Ворота",
-        //   callback_data: "studio_spi",
-        // })
+        .row()
+        .add({
+          text: "м. Московские Ворота",
+          callback_data: "studio_spi",
+        })
         .row()
         .add({ text: "Поменять город", callback_data: "change_city" });
     } else if (session.city === "Ереван") {
@@ -2822,6 +2833,10 @@ async function handleExistingUserScenario(ctx) {
     console.error("Произошла ошибка:", error);
   }
 }
+
+bot.catch((err) => {
+  console.error("Ошибка обработки апдейта:", err.error || err);
+});
 
 // Запуск бота
 bot.start();
