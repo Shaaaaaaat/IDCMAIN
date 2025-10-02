@@ -349,22 +349,22 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_11400_spb_hkc: {
-    sum: 11400,
+  buy_13200_spb_hkc: {
+    sum: 13200,
     lessons: 12,
     tag: "SPB_group_HKC_long",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_9600_spb_hkc: {
-    sum: 9600,
+  buy_11400_spb_hkc: {
+    sum: 11400,
     lessons: 12,
     tag: "SPB_group_HKC_short",
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_1100_spb_hkc: {
-    sum: 1100,
+  buy_1400_spb_hkc: {
+    sum: 1400,
     lessons: 1,
     tag: "SPB_group_HKC",
     currency: "RUB",
@@ -640,16 +640,16 @@ const buttonsData = {
     ],
     SPBHKC: [
       {
-        text: "12 занятий (11 400₽) — действует 8 недель",
+        text: "12 занятий (13 200₽) — действует 8 недель",
+        callback_data: "buy_13200_spb_hkc",
+      },
+      {
+        text: "12 занятий (11 400₽) — действует 4 недели",
         callback_data: "buy_11400_spb_hkc",
       },
       {
-        text: "12 занятий (9 600₽) — действует 4 недели",
-        callback_data: "buy_9600_spb_hkc",
-      },
-      {
-        text: "1 занятие (1 100₽) — действует 4 недели",
-        callback_data: "buy_1100_spb_hkc",
+        text: "1 занятие (1 400₽) — действует 4 недели",
+        callback_data: "buy_1400_spb_hkc",
       },
       {
         text: "Пополнить депозит (любая сумма)",
