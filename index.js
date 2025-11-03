@@ -2348,6 +2348,10 @@ bot.on("message:text", async (ctx) => {
     }
 
     try {
+      // Сохраним текущую дату окончания до изменения, чтобы отправить в служебный чат
+      const beforeRec = await getClientRecordForFreeze(tgId);
+      const beforeDate = beforeRec?.finalDay || "не указана";
+
       const result = await applyFreezeToAirtable(tgId, days);
       if (!result.ok) {
         if (result.reason === "already_used") {
@@ -2375,6 +2379,17 @@ bot.on("message:text", async (ctx) => {
         await ctx.reply(
           `Готово! Ваш абонемент продлён на ${days} дн. Новая дата окончания: ${result.newFinalDay}`
         );
+
+        // Уведомление в операционный чат
+        const username = ctx.from.username
+          ? `@${ctx.from.username}`
+          : `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim() || `id:${tgId}`;
+        const notify = `Заморозка абонемента\nПользователь: ${username} (tgId ${tgId})\nПродление: +${days} дн\nБыло: ${beforeDate} → Стало: ${result.newFinalDay}`;
+        try {
+          await bot.api.sendMessage(-4510303967, notify);
+        } catch (notifyErr) {
+          console.error("Не удалось отправить уведомление о заморозке:", notifyErr);
+        }
       }
     } catch (e) {
       console.error("Freeze error:", e);
