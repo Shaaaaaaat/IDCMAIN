@@ -1315,6 +1315,87 @@ async function sendDateToAirtable2(tgId, date) {
   }
 }
 
+// Хелперы для функции заморозки абонемента (Final_day в формате dd.mm и Checkbox freeze_option)
+async function getClientRecordForFreeze(tgId) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
+
+  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
+  const headers = { Authorization: `Bearer ${apiKey}` };
+
+  try {
+    const { data } = await axios.get(url, { headers });
+    if (!data.records || data.records.length === 0) return null;
+    const record = data.records[0];
+    return {
+      recordId: record.id,
+      finalDay: record.fields.Final_day,
+      freezeUsed: record.fields.freeze_option === true,
+    };
+  } catch (error) {
+    console.error(
+      "Error fetching client record for freeze:",
+      error.response ? error.response.data : error.message
+    );
+    return null;
+  }
+}
+
+function addDaysToDdMm(ddMmString, daysToAdd) {
+  if (!ddMmString || typeof ddMmString !== "string") return null;
+  const parts = ddMmString.split(".");
+  if (parts.length !== 2) return null;
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  if (!Number.isFinite(day) || !Number.isFinite(month)) return null;
+  // Используем текущий год для расчётов; год в ответе игнорируем (храним dd.mm)
+  const now = new Date();
+  const base = new Date(now.getFullYear(), month - 1, day);
+  if (Number.isNaN(base.getTime())) return null;
+  base.setDate(base.getDate() + daysToAdd);
+  const dd = String(base.getDate()).padStart(2, "0");
+  const mm = String(base.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}`;
+}
+
+async function applyFreezeToAirtable(tgId, daysToAdd) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
+
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  // Найдём запись повторно, чтобы работать с актуальными данными
+  const searchUrl = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
+  const searchResp = await axios.get(searchUrl, { headers });
+  const records = searchResp.data.records;
+  if (!records || records.length === 0) return { ok: false, reason: "not_found" };
+
+  const record = records[0];
+  const recordId = record.id;
+  const freezeUsed = record.fields.freeze_option === true;
+  const finalDayValue = record.fields.Final_day;
+
+  if (freezeUsed) return { ok: false, reason: "already_used" };
+  if (!finalDayValue) return { ok: false, reason: "no_final_day" };
+
+  const newFinalDay = addDaysToDdMm(finalDayValue, daysToAdd);
+  if (!newFinalDay) return { ok: false, reason: "bad_date" };
+
+  const updateUrl = `https://api.airtable.com/v0/${baseId}/${clientsId}/${recordId}`;
+  await axios.patch(
+    updateUrl,
+    { fields: { Final_day: newFinalDay, freeze_option: true } },
+    { headers }
+  );
+
+  return { ok: true, newFinalDay };
+}
+
 // Функция для отправки данных в Airtable 2
 async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag) {
   const apiKey = process.env.AIRTABLE_API_KEY;
@@ -2244,6 +2325,68 @@ bot.on("message:text", async (ctx) => {
     session.userState = {}; // Очистка состояния
     await session.save();
   }
+
+  // Ожидание количества дней для заморозки абонемента
+  if (session.userState?.awaitingFreezeDays === true) {
+    // Дополнительная проверка актуального баланса перед применением заморозки
+    const info = await getUserInfo(tgId);
+    if (!info || info.balance <= 0) {
+      await ctx.reply(
+        "У вас нет действующего абонемента, пожалуйста, выберите новый тариф"
+      );
+      session.userState = {};
+      await session.save();
+      return;
+    }
+
+    const raw = ctx.message.text.trim();
+    const days = Number.parseInt(raw, 10);
+
+    if (!Number.isFinite(days) || days < 1 || days > 30) {
+      await ctx.reply("Введите число от 1 до 30.");
+      return;
+    }
+
+    try {
+      const result = await applyFreezeToAirtable(tgId, days);
+      if (!result.ok) {
+        if (result.reason === "already_used") {
+          await ctx.reply(
+            "К сожалению, вы уже использовали функцию заморозки в текущем абонементе для корректировки срока свяжитесь с нашим менеджером @IDC_Manager"
+          );
+        } else if (result.reason === "no_final_day") {
+          await ctx.reply(
+            "Не удалось определить текущую дату окончания абонемента. Свяжитесь с нашим менеджером @IDC_Manager"
+          );
+        } else if (result.reason === "bad_date") {
+          await ctx.reply(
+            "Текущая дата окончания имеет некорректный формат. Свяжитесь с нашим менеджером @IDC_Manager"
+          );
+        } else if (result.reason === "not_found") {
+          await ctx.reply(
+            "Не удалось найти вашу запись. Пожалуйста, попробуйте позже или свяжитесь с менеджером @IDC_Manager"
+          );
+        } else {
+          await ctx.reply(
+            "Произошла ошибка при заморозке. Попробуйте позже или напишите менеджеру @IDC_Manager"
+          );
+        }
+      } else {
+        await ctx.reply(
+          `Готово! Ваш абонемент продлён на ${days} дн. Новая дата окончания: ${result.newFinalDay}`
+        );
+      }
+    } catch (e) {
+      console.error("Freeze error:", e);
+      await ctx.reply(
+        "Произошла непредвиденная ошибка. Попробуйте позже или свяжитесь с менеджером @IDC_Manager"
+      );
+    } finally {
+      session.userState = {};
+      await session.save();
+    }
+    return;
+  }
   // Проверка на ожидаемый ответ о времени тренировки
   if (session.step === "awaiting_personal_training_details") {
     const priceTag = session.priceTag; // Достаем priceTag из сессии
@@ -2346,6 +2489,7 @@ bot.on("message:text", async (ctx) => {
               .text("Купить групповые тренировки")
               .row() // Перенос на новую строку
               .text("Дата окончания")
+              .text("Заморозить абонемент")
               .text("Команды") // Вторая строка
               .build(),
             resize_keyboard: true,
@@ -2361,6 +2505,7 @@ bot.on("message:text", async (ctx) => {
               .text("Купить персональные тренировки")
               .row() // Перенос на новую строку
               .text("Дата окончания")
+              .text("Заморозить абонемент")
               .text("Команды") // Вторая строка
               .build(),
             resize_keyboard: true,
@@ -2376,6 +2521,7 @@ bot.on("message:text", async (ctx) => {
               .text("Купить онлайн тренировки")
               .row() // Перенос на новую строку
               .text("Дата окончания")
+              .text("Заморозить абонемент")
               .text("Команды") // Вторая строка
               .build(),
             resize_keyboard: true,
@@ -2522,6 +2668,42 @@ bot.on("message:text", async (ctx) => {
         "Не удалось получить информацию о дате окончания. Пожалуйста, попробуйте позже."
       );
     }
+  } else if (userMessage === "Заморозить абонемент") {
+    const tgId = ctx.from.id;
+    const userInfoForFreeze = await getUserInfo(tgId);
+
+    if (!userInfoForFreeze || userInfoForFreeze.balance <= 0) {
+      await ctx.reply(
+        "У вас нет действующего абонемента, пожалуйста, выберите новый тариф"
+      );
+      return;
+    }
+    const record = await getClientRecordForFreeze(tgId);
+
+    if (!record) {
+      await ctx.reply(
+        "Не удалось найти вашу запись. Попробуйте позже или свяжитесь с менеджером @IDC_Manager"
+      );
+      return;
+    }
+
+    if (record.freezeUsed) {
+      await ctx.reply(
+        "К сожалению, вы уже использовали функцию заморозки в текущем абонементе для корректировки срока свяжитесь с нашим менеджером @IDC_Manager"
+      );
+      return;
+    }
+
+    if (!record.finalDay) {
+      await ctx.reply(
+        "У вас не определена дата окончания абонемента. Свяжитесь с менеджером @IDC_Manager"
+      );
+      return;
+    }
+
+    session.userState = { ...(session.userState || {}), awaitingFreezeDays: true };
+    await session.save();
+    await ctx.reply("Введите число от 1 до 30 (сколько дней заморозить):");
   } else if (userMessage === "Как проходят тренировки") {
     console.log("Нажал на кнопку - Как проходят тренировки");
     await ctx.reply(
@@ -2791,6 +2973,7 @@ async function handleExistingUserScenario(ctx) {
           .text("Купить онлайн тренировки")
           .row() // Перенос на новую строку
           .text("Дата окончания")
+          .text("Заморозить абонемент")
           .text("Команды"); // Вторая строка;
         await ctx.reply("Привет! Выберите, что вас интересует:", {
           reply_markup: { keyboard: keyboard.build(), resize_keyboard: true },
@@ -2802,6 +2985,7 @@ async function handleExistingUserScenario(ctx) {
           .text("Купить групповые тренировки")
           .row() // Перенос на новую строку
           .text("Дата окончания")
+          .text("Заморозить абонемент")
           .text("Команды"); // Вторая строка;
         await ctx.reply("Привет! Выберите, что вас интересует:", {
           reply_markup: { keyboard: keyboard.build(), resize_keyboard: true },
@@ -2813,6 +2997,7 @@ async function handleExistingUserScenario(ctx) {
           .text("Купить персональные тренировки")
           .row() // Перенос на новую строку
           .text("Дата окончания")
+          .text("Заморозить абонемент")
           .text("Команды"); // Вторая строка;
         await ctx.reply("Привет! Выберите, что вас интересует:", {
           reply_markup: { keyboard: keyboard.build(), resize_keyboard: true },
