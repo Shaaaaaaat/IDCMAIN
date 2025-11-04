@@ -2356,7 +2356,7 @@ bot.on("message:text", async (ctx) => {
       if (!result.ok) {
         if (result.reason === "already_used") {
           await ctx.reply(
-            "К сожалению, вы уже использовали функцию заморозки в текущем абонементе. Для корректировки срока свяжитесь с нашим менеджером @IDC_Manager."
+            "К сожалению, вы не можете использовать функцию заморозки в текущем абонементе. Для корректировки срока свяжитесь с нашим менеджером @IDC_Manager."
           );
         } else if (result.reason === "no_final_day") {
           await ctx.reply(
