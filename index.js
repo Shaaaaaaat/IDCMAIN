@@ -908,6 +908,71 @@ function getPriceAndSchedule(studio) {
   );
 }
 
+/* ---------------- AIRTABLE HELPERS ---------------- */
+
+function escapeAirtableFormulaValue(value) {
+  // Защита filterByFormula от кавычек и спецсимволов
+  return String(value).replace(/'/g, "\\'");
+}
+
+function formatMoney(sum, currency) {
+  if (sum === undefined || sum === null) return "";
+  const num = Number(sum);
+  const s = Number.isFinite(num) ? num : sum;
+
+  const c = (currency || "").toUpperCase();
+  if (c === "USD") return `${s}$`;
+  if (c === "EUR") return `${s}€`;
+  if (c === "RUB") return `${s}₽`;
+  if (c === "AMD") return `${s}դր.`;
+  return `${s} ${c || ""}`.trim();
+}
+
+async function patchAirtableRecord(tableId, recordId, fields) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+
+  const url = `https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`;
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  await axios.patch(url, { fields }, { headers });
+}
+
+async function getPurchaseByToken(token) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const tableId = process.env.AIRTABLE_PURCHASE_WEBSITE_TABLE;
+
+  if (!apiKey || !baseId || !tableId) {
+    throw new Error("Airtable env vars missing");
+  }
+
+  const safeToken = escapeAirtableFormulaValue(token);
+  const formula = `{tg_link_token}='${safeToken}'`;
+
+  const url = `https://api.airtable.com/v0/${baseId}/${tableId}?filterByFormula=${encodeURIComponent(
+    formula
+  )}`;
+
+  const headers = { Authorization: `Bearer ${apiKey}` };
+
+  const resp = await axios.get(url, { headers });
+  const records = resp.data.records || [];
+
+  if (!records.length) return null;
+
+  const r = records[0];
+  return {
+    recordId: r.id,
+    fields: r.fields || {},
+    tableId,
+  };
+}
+
+
 // Функция для получения информации о пользователе из Airtable
 async function getUserInfo(tgId) {
   const apiKey = process.env.AIRTABLE_API_KEY;
@@ -1452,6 +1517,81 @@ bot.command("start", async (ctx) => {
     // Получаем параметры после /start
     const args = ctx.message.text.split(" ");
     const startParam = args[1] || null; // Получаем значение параметра (online/offline)
+
+    const SYSTEM_START_PARAMS = new Set([
+      "online",
+      "offline",
+      "pullups",
+      "super",
+      "light",
+      "handstand",
+    ]);
+    
+    // если параметр есть и это НЕ системный параметр — считаем это токеном
+    if (startParam && !SYSTEM_START_PARAMS.has(startParam)) {
+      try {
+        const token = startParam.trim();
+    
+        const payment = await getPaymentByToken(token);
+    
+        if (!payment) {
+          await ctx.reply(
+            "Не нашёл оплату по этой ссылке. Проверь, что ты открыл(а) ссылку со страницы оплаты. Если проблема повторяется — напиши в поддержку."
+          );
+          return;
+        }
+    
+        const f = payment.fields;
+    
+        const status = String(f.Status || f.status || "").toLowerCase();
+        // допустим, “paid” или “Paid”
+        const isPaid = status === "paid";
+    
+        if (!isPaid) {
+          await ctx.reply(
+            "Оплата по этой ссылке ещё не подтверждена. Если ты только что оплатил(а), подожди пару минут и открой ссылку ещё раз."
+          );
+          return;
+        }
+    
+        // защита от повторной привязки
+        const alreadyTgId = f.tgId || f.telegram_id || f.telegramId;
+        if (alreadyTgId && String(alreadyTgId) !== String(ctx.from.id)) {
+          await ctx.reply(
+            "Эта покупка уже привязана к другому аккаунту Telegram. Если это ошибка — напиши в поддержку."
+          );
+          return;
+        }
+    
+        const fio = f.FIO || f.Fio || f.fullName || f.name || "друг";
+        const sum = f.Sum ?? f.sum;
+        const currency = f.Currency || f.currency;
+    
+        // обновляем запись: ставим Matched и сохраняем tgId
+        await patchAirtableRecord(payment.tableId, payment.recordId, {
+          Status: "Matched",
+          tgId: ctx.from.id,
+          Nickname: ctx.from.username || "", // если нужно
+          Matched_at: new Date().toISOString(), // если есть такое поле
+        });
+    
+        await ctx.reply(
+          `Привет, ${fio}! ✅\nОплата подтверждена: ${formatMoney(sum, currency)} зачислено на ваш счёт.\n\nМожешь продолжать — оплата уже отображается в системе.`
+        );
+    
+        // дальше можно сразу показать меню для существующего клиента:
+        // если после Matched запись попадает в Clients — то можно вызвать handleExistingUserScenario
+        // но безопаснее пока просто закончить
+        return;
+      } catch (e) {
+        console.error("start token flow error:", e);
+        await ctx.reply(
+          "Не удалось проверить оплату из-за технической ошибки. Попробуй ещё раз чуть позже или напиши в поддержку."
+        );
+        return;
+      }
+    }
+    
 
     try {
       await Session.findOneAndUpdate(
