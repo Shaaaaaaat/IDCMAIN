@@ -912,7 +912,7 @@ function getPriceAndSchedule(studio) {
 
 function escapeAirtableFormulaValue(value) {
   // Защита filterByFormula от кавычек и спецсимволов
-  return String(value).replace(/'/g, "\\'");
+  return String(value).replace(/'/g, "''");
 }
 
 function formatMoney(sum, currency) {
@@ -1532,7 +1532,7 @@ bot.command("start", async (ctx) => {
       try {
         const token = startParam.trim();
     
-        const payment = await getPaymentByToken(token);
+        const payment = await getPurchaseByToken(token);
     
         if (!payment) {
           await ctx.reply(
@@ -1572,7 +1572,6 @@ bot.command("start", async (ctx) => {
           Status: "Matched",
           tgId: ctx.from.id,
           Nickname: ctx.from.username || "", // если нужно
-          Matched_at: new Date().toISOString(), // если есть такое поле
         });
     
         await ctx.reply(
