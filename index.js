@@ -1569,7 +1569,7 @@ bot.command("start", async (ctx) => {
     
         // обновляем запись: ставим Matched и сохраняем tgId
         await patchAirtableRecord(payment.tableId, payment.recordId, {
-          Status: "Matched",
+          Status: "matched",
           tgId: ctx.from.id,
           Nickname: ctx.from.username || "", // если нужно
         });
@@ -1579,7 +1579,7 @@ bot.command("start", async (ctx) => {
         );
     
         // дальше можно сразу показать меню для существующего клиента:
-        // если после Matched запись попадает в Clients — то можно вызвать handleExistingUserScenario
+        // если после matched запись попадает в Clients — то можно вызвать handleExistingUserScenario
         // но безопаснее пока просто закончить
         return;
       } catch (e) {
