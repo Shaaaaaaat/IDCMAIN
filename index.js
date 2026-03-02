@@ -2578,15 +2578,12 @@ bot.on("callback_query:data", async (ctx) => {
       session.step = "online_buttons";
       await session.save();
     } else if (action === "foreign_card") {
-      console.log("Выбрали зарубежную карту, запрашиваю валюту");
-      session.userState = { ...(session.userState || {}), studio };
-      session.step = "awaiting_online_currency";
+      console.log("Выбрали зарубежную карту — направляю на сайт");
+      session.step = "completed";
       await session.save();
-      await ctx.reply("Выберите валюту:", {
-        reply_markup: new InlineKeyboard()
-          .add({ text: "EUR", callback_data: "curr_eur" })
-          .add({ text: "USD", callback_data: "curr_usd" }),
-      });
+      await ctx.reply(
+        "Для выбора тарифа и оплаты зарубежной картой перейдите, пожалуйста, на сайт — в боте эта функция появится чуть позже.\n\nhttps://www.idocalisthenics.com/ru#pricing-top"
+      );
     }
   } else if (session.step === "awaiting_online_currency") {
     const studio = session.userState?.studio || "classic";
@@ -3304,10 +3301,9 @@ bot.on("message:text", async (ctx) => {
         reply_markup: keyboard,
       });
     } else if (userInfo.tag.includes("ds") && userInfo.tag.includes("eur")) {
-      const keyboard = generateKeyboard("ds_eur");
-      await ctx.reply("Выберите тариф:", {
-        reply_markup: keyboard,
-      });
+      await ctx.reply(
+        "Для выбора тарифа и оплаты зарубежной картой перейдите, пожалуйста, на сайт — в боте эта функция появится чуть позже.\n\nhttps://www.idocalisthenics.com/ru#pricing-top"
+      );
     } else if (!userInfo.tag.includes("ds")) {
       const keyboard = generateKeyboard("ds_rub");
       await ctx.reply("Выберите тариф:", {
