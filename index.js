@@ -127,21 +127,20 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
   const buyId = process.env.AIRTABLE_BUY_ID;
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
+  const fields = {
+    id_payment: paymentId,
+    Sum: amount,
+    Lessons: lessons,
+    Tag: tag,
+    Currency: currency,
+    Status: "created",
+    email: String(email || "").slice(0, 255),
+  };
+  if (tgId != null) fields.tgId = Number(tgId);
+  if (fullName) fields.FIO = String(fullName).slice(0, 255);
   await axios.post(
     `https://api.airtable.com/v0/${baseId}/${buyId}`,
-    {
-      fields: {
-        tgId: tgId != null ? Number(tgId) : undefined,
-        id_payment: paymentId,
-        Sum: amount,
-        Lessons: lessons,
-        Tag: tag,
-        Currency: currency,
-        Status: "created",
-        FIO: fullName || "",
-        email: email || "",
-      },
-    },
+    { fields },
     { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
   );
   return { paymentUrl, paymentId, orderId };
@@ -201,7 +200,7 @@ async function checkAmeriaPayment(paymentId) {
   };
 }
 
-async function generateSecondPaymentLink(buy, email, tgId) {
+async function generateSecondPaymentLink(buy, email, tgId, fullName) {
   const actionInfo = actionData[buy];
 
   if (!actionInfo) {
@@ -237,8 +236,7 @@ async function generateSecondPaymentLink(buy, email, tgId) {
     const paymentLink = await createStripePaymentLink(priceId, paymentId);
     return { paymentLink, paymentId };
   } else if (actionInfo.paymentSystem === "ameria") {
-    // Ameriabank VPOS для EUR/USD (tgId передаётся третьим аргументом)
-    const fullName = `${actionInfo.studio || ""}`.trim() || "Client";
+    // Ameriabank VPOS для EUR/USD (tgId и fullName передаются аргументами)
     const tariffId = actionInfo.tag || buy;
     const tariffLabel = `${actionInfo.lessons} lessons — ${actionInfo.sum} ${currency}`;
     const { paymentUrl, paymentId: ameriaPaymentId } = await initAmeriaPayment({
@@ -246,7 +244,7 @@ async function generateSecondPaymentLink(buy, email, tgId) {
       amount: actionInfo.sum,
       currency: actionInfo.currency,
       email: e,
-      fullName,
+      fullName: fullName || "",
       tariffId,
       tariffLabel,
       lessons: actionInfo.lessons,
@@ -1326,7 +1324,6 @@ async function getUserInfo(tgId) {
 // Функция для генерации клавиатуры на основе тега пользователя
 function generateKeyboard(tag) {
   let keyboard = new InlineKeyboard();
-  console.log("Отправляю кнопки для оплаты");
 
   if (tag.includes("ds") && tag.includes("rub")) {
     buttonsData.ds.RUB.forEach((button) => keyboard.add(button).row());
@@ -1862,17 +1859,11 @@ app.listen(HTTP_PORT, () => {
 bot.command("start", async (ctx) => {
   const user = ctx.from;
   const tgId = ctx.from.id;
-  console.log(`ID: ${user.id}`);
-  console.log(`Имя: ${user.first_name}`);
-  console.log(`Фамилия: ${user.last_name || "не указана"}`);
-  console.log(`Ник: ${user.username || "не указан"}`);
-  console.log(`Команда /start от пользователя: ${user.id}`);
 
   // Проверка наличия пользователя в Airtable
   const userInfo = await getUserInfo(tgId);
 
   if (userInfo) {
-    console.log("Пользователь найден в базе Clients");
     await handleExistingUserScenario(ctx);
   } else {
     // Получаем параметры после /start
@@ -1964,7 +1955,6 @@ bot.command("start", async (ctx) => {
         ctx.from.last_name || ""
       }`.trim();
 
-      console.log("Пользователя нет в базе Clients");
       // Сохраняем идентификатор записи в сессии
       const airtableId = await sendFirstAirtable(
         ctx.from.id,
@@ -2559,15 +2549,17 @@ bot.on("callback_query:data", async (ctx) => {
       await session.save();
     }
   } else if (session.step === "online_buttons") {
-    console.log("генерирую ссылку для оплаты после нажатия кнопки с тарифом");
     const actionInfo = actionData[ctx.callbackQuery.data];
+    try {
+      const fullName = session?.name || [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ").trim() || "";
     const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
-      action,
-      session.email,
-      ctx.from.id
-    );
+        action,
+        session.email,
+        ctx.from.id,
+        fullName
+      );
 
-    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
+      await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
     if (isAmeria) {
       // Ameria: запись в Airtable уже в init, запускаем polling
       const intervalMs = 12000;
@@ -2599,6 +2591,12 @@ bot.on("callback_query:data", async (ctx) => {
     session.userState = {};
     session.step = "completed";
     await session.save();
+    } catch (err) {
+      const errData = err.response?.data?.error || err.response?.data;
+      const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (err.message || "unknown");
+      console.error("Ошибка генерации ссылки:", msg);
+      await ctx.reply("Не удалось сформировать ссылку на оплату. Попробуйте позже или напишите в поддержку.");
+    }
     await ctx.answerCallbackQuery();
   } else if (action.startsWith("day")) {
     const buttonText = action.split(",")[1];
@@ -2716,10 +2714,7 @@ bot.on("callback_query:data", async (ctx) => {
       console.error("Произошла ошибка:", error);
     }
   } else if (action.startsWith("buy")) {
-    console.log("генерирую ссылку для оплаты после нажатия кнопки с тарифом");
-
     const userInfo = await getUserInfo(ctx.from.id);
-    // const { tag, email } = userInfo;
     const email = userInfo?.email || session?.email;
     const tag = userInfo?.tag || "Отсутствует";
 
@@ -2730,20 +2725,19 @@ bot.on("callback_query:data", async (ctx) => {
           ctx.from?.username || "не указан"
         }\nID: ${ctx.from?.id}`
       );
-    } catch (error) {
-      console.error(`Не удалось отправить сообщение`, error);
-    }
+    } catch (_) {}
 
-    // Генерация ссылки для оплаты
     const actionInfo = actionData[action];
-    const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
-      action,
-      email,
-      ctx.from.id
-    );
+    const fullName = session?.name || [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ").trim() || "";
+    try {
+      const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
+        action,
+        email,
+        ctx.from.id,
+        fullName
+      );
 
-    // Отправляем пользователю ссылку на оплату
-    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
+      await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
 
     if (isAmeria) {
       const intervalMs = 12000;
@@ -2771,6 +2765,12 @@ bot.on("callback_query:data", async (ctx) => {
         actionInfo.lessons,
         actionInfo.tag
       );
+    }
+    } catch (err) {
+      const errData = err.response?.data?.error || err.response?.data;
+      const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (err.message || "unknown");
+      console.error("Ошибка генерации ссылки:", msg);
+      await ctx.reply("Не удалось сформировать ссылку на оплату. Попробуйте позже или напишите в поддержку.");
     }
   } else if (action.startsWith("a_net")) {
     console.log("НЕТ - не планиурет продолжать тренировки с нами");
