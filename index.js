@@ -132,7 +132,7 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
     Sum: amount,
     Lessons: lessons,
     Tag: tag,
-    Currency: currency,
+    Currency: currency ? [currency] : [],
     Status: "created",
     email: String(email || "").slice(0, 255),
   };
