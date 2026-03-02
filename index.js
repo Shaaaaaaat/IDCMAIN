@@ -98,8 +98,8 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
   const base = (process.env.AMERIA_VPOS_BASE || "").replace(/\/$/, "");
   const appUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
   if (!base || !appUrl) throw new Error("AMERIA_VPOS_BASE и APP_BASE_URL обязательны");
-  const tgToken = crypto.randomBytes(16).toString("hex");
-  const orderId = makeOrderIdFromToken(tgToken);
+  const orderSeed = crypto.randomBytes(16).toString("hex");
+  const orderId = makeOrderIdFromToken(orderSeed);
   const currCode = AMERIA_CURRENCY[currency] || "978";
   const loc = (locale || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
   const opaque = JSON.stringify({ tariffId, email, currency, locale: loc, courseName: courseName || "" });
@@ -132,21 +132,19 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
     {
       fields: {
         tgId: tgId != null ? String(tgId) : "",
-        inv_id: paymentId,
         id_payment: paymentId,
         Sum: amount,
         Lessons: lessons,
         Tag: tag,
         Currency: currency,
         Status: "created",
-        tg_link_token: tgToken,
         FIO: fullName || "",
         email: email || "",
       },
     },
     { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
   );
-  return { paymentUrl, paymentId, orderId, tgToken };
+  return { paymentUrl, paymentId, orderId };
 }
 async function checkAmeriaPayment(paymentId) {
   const base = (process.env.AMERIA_VPOS_BASE || "").replace(/\/$/, "");
@@ -171,14 +169,13 @@ async function checkAmeriaPayment(paymentId) {
   else if (state.includes("started") || orderStatus === "0") status = "pending";
   else status = "error";
 
-  let tgToken = null;
   let tgId = null;
   if (status === "paid") {
     const baseId = process.env.AIRTABLE_BASE_ID;
     const buyId = process.env.AIRTABLE_BUY_ID;
     const apiKey = process.env.AIRTABLE_API_KEY;
     const listRes = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/${buyId}?filterByFormula=${encodeURIComponent(`{inv_id}="${String(paymentId).replace(/"/g, '""')}"`)}`,
+      `https://api.airtable.com/v0/${baseId}/${buyId}?filterByFormula=${encodeURIComponent(`{id_payment}="${String(paymentId).replace(/"/g, '""')}"`)}`,
       { headers: { Authorization: `Bearer ${apiKey}` } }
     );
     const recs = listRes.data.records || [];
@@ -192,7 +189,6 @@ async function checkAmeriaPayment(paymentId) {
           { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
         );
       }
-      tgToken = fields.tg_link_token || null;
       tgId = fields.tgId ? String(fields.tgId) : null;
     }
   }
@@ -201,7 +197,6 @@ async function checkAmeriaPayment(paymentId) {
     paid: status === "paid",
     status,
     bank: { code, paymentState: data.PaymentState, orderStatus, reason: data.ResponseMessage || data.ErrorMessage },
-    tgToken,
     tgId,
   };
 }
@@ -246,7 +241,7 @@ async function generateSecondPaymentLink(buy, email, tgId) {
     const fullName = `${actionInfo.studio || ""}`.trim() || "Client";
     const tariffId = actionInfo.tag || buy;
     const tariffLabel = `${actionInfo.lessons} lessons — ${actionInfo.sum} ${currency}`;
-    const { paymentUrl, paymentId: ameriaPaymentId, tgToken } = await initAmeriaPayment({
+    const { paymentUrl, paymentId: ameriaPaymentId } = await initAmeriaPayment({
       tgId,
       amount: actionInfo.sum,
       currency: actionInfo.currency,
@@ -259,7 +254,7 @@ async function generateSecondPaymentLink(buy, email, tgId) {
       courseName: actionInfo.studio,
       locale: "ru",
     });
-    return { paymentLink: paymentUrl, paymentId: ameriaPaymentId, tgToken, isAmeria: true };
+    return { paymentLink: paymentUrl, paymentId: ameriaPaymentId, isAmeria: true };
   } else {
     throw new Error("Неизвестная платёжная система");
   }
