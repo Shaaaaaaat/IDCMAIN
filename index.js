@@ -89,37 +89,83 @@ async function generatePaymentLinkFirst(studio, email) {
 // --- Ameriabank VPOS (EUR/USD) ---
 // Required env: AMERIA_VPOS_BASE, AMERIA_CLIENT_ID, AMERIA_USERNAME, AMERIA_PASSWORD, APP_BASE_URL
 const AMERIA_CURRENCY = { EUR: "978", USD: "840" };
+const AMERIA_BACKURL_BASE = "https://idocalisthenics.com";
 function makeOrderIdFromToken(tokenHex) {
   const h = crypto.createHash("sha256").update(tokenHex, "hex").digest();
   const u32 = h.readUInt32BE(0);
   return (u32 % 2000000000) + 1;
 }
+function normalizeLocale(locale) {
+  return String(locale || "").toLowerCase().startsWith("en") ? "en" : "ru";
+}
+function toAscii(text, maxLen = 255) {
+  return String(text || "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+async function getBuyRecordByPaymentId(paymentId) {
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const buyId = process.env.AIRTABLE_BUY_ID;
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const listRes = await axios.get(
+    `https://api.airtable.com/v0/${baseId}/${buyId}?filterByFormula=${encodeURIComponent(`{id_payment}="${String(paymentId).replace(/"/g, '""')}"`)}`,
+    { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 20000 }
+  );
+  const recs = listRes.data.records || [];
+  return recs.length > 0 ? recs[0] : null;
+}
+async function patchBuyRecord(recordId, fields) {
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const buyId = process.env.AIRTABLE_BUY_ID;
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  await axios.patch(
+    `https://api.airtable.com/v0/${baseId}/${buyId}/${recordId}`,
+    { fields },
+    { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, timeout: 20000 }
+  );
+}
 async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tariffId, tariffLabel, lessons, tag, courseName, locale }) {
   const base = (process.env.AMERIA_VPOS_BASE || "").replace(/\/$/, "");
-  const appUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
-  if (!base || !appUrl) throw new Error("AMERIA_VPOS_BASE и APP_BASE_URL обязательны");
+  if (!base) throw new Error("AMERIA_VPOS_BASE обязателен");
+  if (!process.env.AMERIA_CLIENT_ID || !process.env.AMERIA_USERNAME || !process.env.AMERIA_PASSWORD) {
+    throw new Error("AMERIA credentials are missing");
+  }
+  const numAmount = Number(amount);
+  if (!Number.isFinite(numAmount) || numAmount <= 0) throw new Error("Некорректная сумма платежа");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ""))) throw new Error("Некорректный email");
+  if (!AMERIA_CURRENCY[currency]) throw new Error("Некорректная валюта Ameria");
+
   const orderSeed = crypto.randomBytes(16).toString("hex");
   const orderId = makeOrderIdFromToken(orderSeed);
-  const currCode = AMERIA_CURRENCY[currency] || "978";
-  const loc = "ru";
-  const opaque = JSON.stringify({ tariffId, email, currency, locale: loc, courseName: courseName || "" });
-  const description = (tariffLabel || `${amount} ${currency}`).substring(0, 255);
+  const currCode = AMERIA_CURRENCY[currency];
+  const loc = normalizeLocale(locale);
+  const opaque = JSON.stringify({
+    tgUserId: tgId != null ? Number(tgId) : null,
+    tariffId: String(tariffId || ""),
+    locale: loc,
+    currency,
+    courseName: String(courseName || ""),
+  }).slice(0, 500);
+  const description = toAscii(tariffLabel || `${numAmount} ${currency}`, 120);
   const body = {
     ClientID: process.env.AMERIA_CLIENT_ID,
     Username: process.env.AMERIA_USERNAME,
     Password: process.env.AMERIA_PASSWORD,
-    Amount: amount,
+    Amount: numAmount,
     OrderID: orderId,
     Description: description,
     Currency: currCode,
-    BackURL: `${appUrl}/pay/ameria/return?locale=${loc}`,
+    BackURL: `${AMERIA_BACKURL_BASE}/pay/ameria/return?locale=${loc}`,
     Opaque: opaque,
     Timeout: 1200,
   };
   const { data } = await axios.post(`${base}/api/VPOS/InitPayment`, body, {
     headers: { "Content-Type": "application/json" },
+    timeout: 20000,
   });
-  if (data.ResponseCode !== 1 || !data.PaymentID) {
+  if (Number(data.ResponseCode) !== 1 || !data.PaymentID) {
     throw new Error(data.ResponseMessage || data.ErrorMessage || "Ameria InitPayment failed");
   }
   const paymentId = data.PaymentID;
@@ -129,7 +175,7 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
   const baseId = process.env.AIRTABLE_BASE_ID;
   const fields = {
     id_payment: paymentId,
-    Sum: amount,
+    Sum: numAmount,
     Lessons: lessons,
     Tag: tag,
     Currency: currency ? [currency] : [],
@@ -155,7 +201,7 @@ async function checkAmeriaPayment(paymentId) {
       Password: process.env.AMERIA_PASSWORD,
       PaymentID: paymentId,
     },
-    { headers: { "Content-Type": "application/json" } }
+    { headers: { "Content-Type": "application/json" }, timeout: 20000 }
   );
   const code = String(data.ResponseCode || data.RespCode || "").trim();
   const state = String(data.PaymentState || "").toLowerCase();
@@ -170,23 +216,12 @@ async function checkAmeriaPayment(paymentId) {
 
   let tgId = null;
   if (status === "paid") {
-    const baseId = process.env.AIRTABLE_BASE_ID;
-    const buyId = process.env.AIRTABLE_BUY_ID;
-    const apiKey = process.env.AIRTABLE_API_KEY;
-    const listRes = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/${buyId}?filterByFormula=${encodeURIComponent(`{id_payment}="${String(paymentId).replace(/"/g, '""')}"`)}`,
-      { headers: { Authorization: `Bearer ${apiKey}` } }
-    );
-    const recs = listRes.data.records || [];
-    if (recs.length > 0) {
-      const rec = recs[0];
+    const rec = await getBuyRecordByPaymentId(paymentId);
+    if (rec) {
       const fields = rec.fields || {};
-      if (fields.Status !== "paid") {
-        await axios.patch(
-          `https://api.airtable.com/v0/${baseId}/${buyId}/${rec.id}`,
-          { fields: { Status: "paid" } },
-          { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
-        );
+      const currentStatus = String(fields.Status || "").toLowerCase();
+      if (currentStatus !== "paid" && currentStatus !== "granted") {
+        await patchBuyRecord(rec.id, { Status: "paid" });
       }
       tgId = fields.tgId ? String(fields.tgId) : null;
     }
@@ -198,6 +233,44 @@ async function checkAmeriaPayment(paymentId) {
     bank: { code, paymentState: data.PaymentState, orderStatus, reason: data.ResponseMessage || data.ErrorMessage },
     tgId,
   };
+}
+async function finalizeAmeriaGrantByPaymentId(paymentId) {
+  const rec = await getBuyRecordByPaymentId(paymentId);
+  if (!rec) return { granted: false, reason: "not_found" };
+  const currentStatus = String(rec.fields?.Status || "").toLowerCase();
+  if (currentStatus === "granted") return { granted: false, reason: "already_granted" };
+  await patchBuyRecord(rec.id, { Status: "granted" });
+  return { granted: true };
+}
+async function pollAmeriaUntilFinal(ctx, paymentId) {
+  const intervalMs = 12000;
+  const deadline = Date.now() + 20 * 60 * 1000;
+  let networkErrors = 0;
+  while (Date.now() < deadline) {
+    try {
+      const r = await checkAmeriaPayment(paymentId);
+      networkErrors = 0;
+      if (r.paid) {
+        const grant = await finalizeAmeriaGrantByPaymentId(paymentId);
+        if (grant.granted) {
+          await ctx.reply("Оплата прошла! Спасибо за покупку.");
+        }
+        return;
+      }
+      if (["declined", "canceled", "refunded", "error"].includes(r.status)) {
+        await ctx.reply("Платёж не подтверждён. Проверьте статус в банке и попробуйте снова.");
+        return;
+      }
+    } catch (_) {
+      networkErrors += 1;
+      if (networkErrors >= 6) {
+        // продолжаем polling, но не шумим в чат/логах
+        networkErrors = 0;
+      }
+    }
+    await wait(intervalMs);
+  }
+  await ctx.reply("Платёж ещё обрабатывается. Если вы уже оплатили, подождите пару минут и повторите проверку.");
 }
 
 async function generateSecondPaymentLink(buy, email, tgId, fullName) {
@@ -1808,13 +1881,17 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.post("/payments/ameria/init", async (req, res) => {
   try {
     const { amount, currency, email, fullName, tariffId, tariffLabel, courseName, locale, tgId, lessons, tag } = req.body || {};
-    if (!amount || !currency || !email) {
+    const numAmount = Number(amount);
+    if (!Number.isFinite(numAmount) || numAmount <= 0 || !currency || !email) {
       return res.status(400).json({ ok: false, error: "amount, currency, email required" });
+    }
+    if (!["EUR", "USD"].includes(String(currency).toUpperCase())) {
+      return res.status(400).json({ ok: false, error: "currency must be EUR or USD" });
     }
     const result = await initAmeriaPayment({
       tgId: tgId || null,
-      amount: Number(amount),
-      currency: ["EUR", "USD"].includes(currency) ? currency : "EUR",
+      amount: numAmount,
+      currency: String(currency).toUpperCase(),
       email,
       fullName: fullName || "Client",
       tariffId: tariffId || "",
@@ -1826,15 +1903,23 @@ app.post("/payments/ameria/init", async (req, res) => {
     });
     return res.json(result);
   } catch (e) {
-    console.error("Ameria init error:", e);
+    const errData = e.response?.data?.error || e.response?.data;
+    const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (e.message || "Init failed");
+    console.error("Ameria init error:", msg);
     return res.status(500).json({ ok: false, error: e.message || "Init failed" });
   }
 });
 app.get("/pay/ameria/return", (req, res) => {
   const loc = (req.query.locale || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
-  const msg = loc === "en"
-    ? "Payment completed. You can return to the bot. We will confirm the payment shortly."
-    : "Оплата проведена. Вы можете вернуться в бота — подтверждение придёт в течение нескольких минут.";
+  const code = String(req.query.responseCode || req.query.resposneCode || "").trim();
+  const isSuccess = code === "00";
+  const isDeclined = code && code !== "00" && code !== "";
+  let msg;
+  if (loc === "en") {
+    msg = isSuccess ? "Payment completed. You can return to the bot — confirmation will arrive shortly." : isDeclined ? "Payment was not completed. Return to the bot to try again or check status." : "Payment is being processed. Return to the bot — confirmation will arrive within a few minutes.";
+  } else {
+    msg = isSuccess ? "Оплата проведена. Вы можете вернуться в бота — подтверждение придёт в течение нескольких минут." : isDeclined ? "Оплата не прошла. Вернитесь в бота — можно повторить или проверить статус." : "Платёж обрабатывается. Вернитесь в бота — подтверждение придёт в течение нескольких минут.";
+  }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>${msg}</p></body></html>`);
 });
@@ -1845,7 +1930,9 @@ app.post("/payments/ameria/check", async (req, res) => {
     const result = await checkAmeriaPayment(paymentId);
     return res.json(result);
   } catch (e) {
-    console.error("Ameria check error:", e);
+    const errData = e.response?.data?.error || e.response?.data;
+    const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (e.message || "Check failed");
+    console.error("Ameria check error:", msg);
     return res.status(500).json({ ok: false, error: e.message || "Check failed" });
   }
 });
@@ -2560,37 +2647,21 @@ bot.on("callback_query:data", async (ctx) => {
       );
 
       await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
-    if (isAmeria) {
-      // Ameria: запись в Airtable уже в init, запускаем polling
-      const intervalMs = 12000;
-      const maxPolls = 110;
-      let pollCount = 0;
-      const iv = setInterval(async () => {
-        pollCount++;
-        if (pollCount > maxPolls) {
-          clearInterval(iv);
-          return;
-        }
-        try {
-          const r = await checkAmeriaPayment(paymentId);
-          if (r.paid) {
-            clearInterval(iv);
-            await ctx.reply("Оплата прошла! Спасибо за покупку.");
-          }
-        } catch (_) {}
-      }, intervalMs);
-    } else {
-      await thirdTwoToAirtable(
-        ctx.from.id,
-        paymentId,
-        actionInfo.sum,
-        actionInfo.lessons,
-        actionInfo.tag
-      );
-    }
-    session.userState = {};
-    session.step = "completed";
-    await session.save();
+      if (isAmeria) {
+        // Статус подтверждаем только через GetPaymentDetails.
+        pollAmeriaUntilFinal(ctx, paymentId);
+      } else {
+        await thirdTwoToAirtable(
+          ctx.from.id,
+          paymentId,
+          actionInfo.sum,
+          actionInfo.lessons,
+          actionInfo.tag
+        );
+      }
+      session.userState = {};
+      session.step = "completed";
+      await session.save();
     } catch (err) {
       const errData = err.response?.data?.error || err.response?.data;
       const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (err.message || "unknown");
@@ -2738,34 +2809,17 @@ bot.on("callback_query:data", async (ctx) => {
       );
 
       await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
-
-    if (isAmeria) {
-      const intervalMs = 12000;
-      const maxPolls = 110;
-      let pollCount = 0;
-      const iv = setInterval(async () => {
-        pollCount++;
-        if (pollCount > maxPolls) {
-          clearInterval(iv);
-          return;
-        }
-        try {
-          const r = await checkAmeriaPayment(paymentId);
-          if (r.paid) {
-            clearInterval(iv);
-            await ctx.reply("Оплата прошла! Спасибо за покупку.");
-          }
-        } catch (_) {}
-      }, intervalMs);
-    } else {
-      await thirdTwoToAirtable(
-        ctx.from.id,
-        paymentId,
-        actionInfo.sum,
-        actionInfo.lessons,
-        actionInfo.tag
-      );
-    }
+      if (isAmeria) {
+        pollAmeriaUntilFinal(ctx, paymentId);
+      } else {
+        await thirdTwoToAirtable(
+          ctx.from.id,
+          paymentId,
+          actionInfo.sum,
+          actionInfo.lessons,
+          actionInfo.tag
+        );
+      }
     } catch (err) {
       const errData = err.response?.data?.error || err.response?.data;
       const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (err.message || "unknown");
