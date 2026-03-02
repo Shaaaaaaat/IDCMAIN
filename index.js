@@ -86,7 +86,127 @@ async function generatePaymentLinkFirst(studio, email) {
   }
 }
 
-async function generateSecondPaymentLink(buy, email) {
+// --- Ameriabank VPOS (EUR/USD) ---
+// Required env: AMERIA_VPOS_BASE, AMERIA_CLIENT_ID, AMERIA_USERNAME, AMERIA_PASSWORD, APP_BASE_URL
+const AMERIA_CURRENCY = { EUR: "978", USD: "840" };
+function makeOrderIdFromToken(tokenHex) {
+  const h = crypto.createHash("sha256").update(tokenHex, "hex").digest();
+  const u32 = h.readUInt32BE(0);
+  return (u32 % 2000000000) + 1;
+}
+async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tariffId, tariffLabel, lessons, tag, courseName, locale }) {
+  const base = (process.env.AMERIA_VPOS_BASE || "").replace(/\/$/, "");
+  const appUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  if (!base || !appUrl) throw new Error("AMERIA_VPOS_BASE и APP_BASE_URL обязательны");
+  const tgToken = crypto.randomBytes(16).toString("hex");
+  const orderId = makeOrderIdFromToken(tgToken);
+  const currCode = AMERIA_CURRENCY[currency] || "978";
+  const loc = (locale || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
+  const opaque = JSON.stringify({ tariffId, email, currency, locale: loc, courseName: courseName || "" });
+  const description = (tariffLabel || `${amount} ${currency}`).substring(0, 255);
+  const body = {
+    ClientID: process.env.AMERIA_CLIENT_ID,
+    Username: process.env.AMERIA_USERNAME,
+    Password: process.env.AMERIA_PASSWORD,
+    Amount: amount,
+    OrderID: orderId,
+    Description: description,
+    Currency: currCode,
+    BackURL: `${appUrl}/pay/ameria/return?locale=${loc}`,
+    Opaque: opaque,
+    Timeout: 1200,
+  };
+  const { data } = await axios.post(`${base}/api/VPOS/InitPayment`, body, {
+    headers: { "Content-Type": "application/json" },
+  });
+  if (data.ResponseCode !== 1 || !data.PaymentID) {
+    throw new Error(data.ResponseMessage || data.ErrorMessage || "Ameria InitPayment failed");
+  }
+  const paymentId = data.PaymentID;
+  const paymentUrl = `${base}/Payments/Pay?id=${paymentId}&lang=${loc}`;
+  const buyId = process.env.AIRTABLE_BUY_ID;
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  await axios.post(
+    `https://api.airtable.com/v0/${baseId}/${buyId}`,
+    {
+      fields: {
+        tgId: tgId != null ? String(tgId) : "",
+        inv_id: paymentId,
+        id_payment: paymentId,
+        Sum: amount,
+        Lessons: lessons,
+        Tag: tag,
+        Currency: currency,
+        Status: "created",
+        tg_link_token: tgToken,
+        FIO: fullName || "",
+        email: email || "",
+      },
+    },
+    { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
+  );
+  return { paymentUrl, paymentId, orderId, tgToken };
+}
+async function checkAmeriaPayment(paymentId) {
+  const base = (process.env.AMERIA_VPOS_BASE || "").replace(/\/$/, "");
+  const { data } = await axios.post(
+    `${base}/api/VPOS/GetPaymentDetails`,
+    {
+      ClientID: process.env.AMERIA_CLIENT_ID,
+      Username: process.env.AMERIA_USERNAME,
+      Password: process.env.AMERIA_PASSWORD,
+      PaymentID: paymentId,
+    },
+    { headers: { "Content-Type": "application/json" } }
+  );
+  const code = String(data.ResponseCode || data.RespCode || "").trim();
+  const state = String(data.PaymentState || "").toLowerCase();
+  const orderStatus = String(data.OrderStatus || "");
+  let status = "pending";
+  if (code === "00" || state.includes("deposited") || orderStatus === "2") status = "paid";
+  else if (state.includes("refunded")) status = "refunded";
+  else if (state.includes("void")) status = "canceled";
+  else if (state.includes("declined")) status = "declined";
+  else if (state.includes("started") || orderStatus === "0") status = "pending";
+  else status = "error";
+
+  let tgToken = null;
+  let tgId = null;
+  if (status === "paid") {
+    const baseId = process.env.AIRTABLE_BASE_ID;
+    const buyId = process.env.AIRTABLE_BUY_ID;
+    const apiKey = process.env.AIRTABLE_API_KEY;
+    const listRes = await axios.get(
+      `https://api.airtable.com/v0/${baseId}/${buyId}?filterByFormula=${encodeURIComponent(`{inv_id}="${String(paymentId).replace(/"/g, '""')}"`)}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } }
+    );
+    const recs = listRes.data.records || [];
+    if (recs.length > 0) {
+      const rec = recs[0];
+      const fields = rec.fields || {};
+      if (fields.Status !== "paid") {
+        await axios.patch(
+          `https://api.airtable.com/v0/${baseId}/${buyId}/${rec.id}`,
+          { fields: { Status: "paid" } },
+          { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
+        );
+      }
+      tgToken = fields.tg_link_token || null;
+      tgId = fields.tgId ? String(fields.tgId) : null;
+    }
+  }
+  return {
+    ok: true,
+    paid: status === "paid",
+    status,
+    bank: { code, paymentState: data.PaymentState, orderStatus, reason: data.ResponseMessage || data.ErrorMessage },
+    tgToken,
+    tgId,
+  };
+}
+
+async function generateSecondPaymentLink(buy, email, tgId) {
   const actionInfo = actionData[buy];
 
   if (!actionInfo) {
@@ -113,7 +233,7 @@ async function generateSecondPaymentLink(buy, email) {
     const paymentLink = await createStripePaymentLink(priceId, paymentId);
     return { paymentLink, paymentId };
   } else if (actionInfo.paymentSystem === "stripeEUR") {
-    // Генерация ссылки для Stripe
+    // Генерация ссылки для Stripe (оставлено для AMD или legacy)
     const priceId = await createStripePriceEUR(
       actionInfo.sum,
       currency,
@@ -121,6 +241,25 @@ async function generateSecondPaymentLink(buy, email) {
     );
     const paymentLink = await createStripePaymentLink(priceId, paymentId);
     return { paymentLink, paymentId };
+  } else if (actionInfo.paymentSystem === "ameria") {
+    // Ameriabank VPOS для EUR/USD (tgId передаётся третьим аргументом)
+    const fullName = `${actionInfo.studio || ""}`.trim() || "Client";
+    const tariffId = actionInfo.tag || buy;
+    const tariffLabel = `${actionInfo.lessons} lessons — ${actionInfo.sum} ${currency}`;
+    const { paymentUrl, paymentId: ameriaPaymentId, tgToken } = await initAmeriaPayment({
+      tgId,
+      amount: actionInfo.sum,
+      currency: actionInfo.currency,
+      email: e,
+      fullName,
+      tariffId,
+      tariffLabel,
+      lessons: actionInfo.lessons,
+      tag: actionInfo.tag,
+      courseName: actionInfo.studio,
+      locale: "ru",
+    });
+    return { paymentLink: paymentUrl, paymentId: ameriaPaymentId, tgToken, isAmeria: true };
   } else {
     throw new Error("Неизвестная платёжная система");
   }
@@ -536,7 +675,7 @@ const actionData = {
     lessons: 12,
     tag: "ds_eur",
     currency: "EUR",
-    paymentSystem: "stripeEUR",
+    paymentSystem: "ameria",
     studio: "calisthenics_classic",
   },
   buy_249_ds_eur: {
@@ -544,7 +683,7 @@ const actionData = {
     lessons: 36,
     tag: "ds_eur",
     currency: "EUR",
-    paymentSystem: "stripeEUR",
+    paymentSystem: "ameria",
     studio: "calisthenics_classic",
   },
   // Personal new tariffs (4900 / 6600) per studio tag
@@ -649,7 +788,7 @@ const actionData = {
     lessons: 1,
     tag: "handstand",
     currency: "EUR",
-    paymentSystem: "stripeEUR",
+    paymentSystem: "ameria",
     studio: "handstand",
   },
   buy_1900_pullups_start_ru: {
@@ -673,7 +812,7 @@ const actionData = {
     lessons: 1,
     tag: "pullups_for_ladies",
     currency: "EUR",
-    paymentSystem: "stripeEUR",
+    paymentSystem: "ameria",
     studio: "pullups_for_ladies",
   },
   buy_1900_classic_start_ru: {
@@ -713,7 +852,7 @@ const actionData = {
     lessons: 1,
     tag: "ds_eur_start",
     currency: "EUR",
-    paymentSystem: "stripeEUR",
+    paymentSystem: "ameria",
     studio: "calisthenics_classic",
   },
   // New online tariffs from screenshots (RUB/EUR/USD)
@@ -733,38 +872,38 @@ const actionData = {
   buy_9600_handstand_ru: { sum: 9600, lessons: 12, tag: "ds_rub_handstand_start", currency: "RUB", paymentSystem: "robokassa", studio: "handstand" },
   buy_11400_handstand_ru: { sum: 11400, lessons: 12, tag: "ds_rub_handstand_start", currency: "RUB", paymentSystem: "robokassa", studio: "handstand" },
   buy_25200_handstand_ru: { sum: 25200, lessons: 36, tag: "ds_rub_handstand_start", currency: "RUB", paymentSystem: "robokassa", studio: "handstand" },
-  buy_11_light_eur: { sum: 11, lessons: 1, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_108_light_eur: { sum: 108, lessons: 12, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_120_light_eur: { sum: 120, lessons: 12, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_288_light_eur: { sum: 288, lessons: 36, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_11_classic_eur: { sum: 11, lessons: 1, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_108_classic_eur: { sum: 108, lessons: 12, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_120_classic_eur: { sum: 120, lessons: 12, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_288_classic_eur: { sum: 288, lessons: 36, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_11_pullups_eur: { sum: 11, lessons: 1, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_108_pullups_eur: { sum: 108, lessons: 12, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_120_pullups_eur: { sum: 120, lessons: 12, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_288_pullups_eur: { sum: 288, lessons: 36, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_11_handstand_eur: { sum: 11, lessons: 1, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_108_handstand_eur: { sum: 108, lessons: 12, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_120_handstand_eur: { sum: 120, lessons: 12, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_288_handstand_eur: { sum: 288, lessons: 36, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_13_light_usd: { sum: 13, lessons: 1, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_132_light_usd: { sum: 132, lessons: 12, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_144_light_usd: { sum: 144, lessons: 12, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_360_light_usd: { sum: 360, lessons: 36, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_light" },
-  buy_13_classic_usd: { sum: 13, lessons: 1, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_132_classic_usd: { sum: 132, lessons: 12, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_144_classic_usd: { sum: 144, lessons: 12, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_360_classic_usd: { sum: 360, lessons: 36, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "stripeEUR", studio: "calisthenics_classic" },
-  buy_13_pullups_usd: { sum: 13, lessons: 1, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_132_pullups_usd: { sum: 132, lessons: 12, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_144_pullups_usd: { sum: 144, lessons: 12, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_360_pullups_usd: { sum: 360, lessons: 36, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "stripeEUR", studio: "pullups_for_ladies" },
-  buy_13_handstand_usd: { sum: 13, lessons: 1, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_132_handstand_usd: { sum: 132, lessons: 12, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_144_handstand_usd: { sum: 144, lessons: 12, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "stripeEUR", studio: "handstand" },
-  buy_360_handstand_usd: { sum: 360, lessons: 36, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "stripeEUR", studio: "handstand" },
+  buy_11_light_eur: { sum: 11, lessons: 1, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_108_light_eur: { sum: 108, lessons: 12, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_120_light_eur: { sum: 120, lessons: 12, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_288_light_eur: { sum: 288, lessons: 36, tag: "ds_eur_light_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_11_classic_eur: { sum: 11, lessons: 1, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_108_classic_eur: { sum: 108, lessons: 12, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_120_classic_eur: { sum: 120, lessons: 12, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_288_classic_eur: { sum: 288, lessons: 36, tag: "ds_eur_classic_start", currency: "EUR", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_11_pullups_eur: { sum: 11, lessons: 1, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_108_pullups_eur: { sum: 108, lessons: 12, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_120_pullups_eur: { sum: 120, lessons: 12, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_288_pullups_eur: { sum: 288, lessons: 36, tag: "ds_eur_pullups_start", currency: "EUR", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_11_handstand_eur: { sum: 11, lessons: 1, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "ameria", studio: "handstand" },
+  buy_108_handstand_eur: { sum: 108, lessons: 12, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "ameria", studio: "handstand" },
+  buy_120_handstand_eur: { sum: 120, lessons: 12, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "ameria", studio: "handstand" },
+  buy_288_handstand_eur: { sum: 288, lessons: 36, tag: "ds_eur_handstand_start", currency: "EUR", paymentSystem: "ameria", studio: "handstand" },
+  buy_13_light_usd: { sum: 13, lessons: 1, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_132_light_usd: { sum: 132, lessons: 12, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_144_light_usd: { sum: 144, lessons: 12, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_360_light_usd: { sum: 360, lessons: 36, tag: "ds_usd_light_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_light" },
+  buy_13_classic_usd: { sum: 13, lessons: 1, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_132_classic_usd: { sum: 132, lessons: 12, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_144_classic_usd: { sum: 144, lessons: 12, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_360_classic_usd: { sum: 360, lessons: 36, tag: "ds_usd_classic_start", currency: "USD", paymentSystem: "ameria", studio: "calisthenics_classic" },
+  buy_13_pullups_usd: { sum: 13, lessons: 1, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_132_pullups_usd: { sum: 132, lessons: 12, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_144_pullups_usd: { sum: 144, lessons: 12, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_360_pullups_usd: { sum: 360, lessons: 36, tag: "ds_usd_pullups_start", currency: "USD", paymentSystem: "ameria", studio: "pullups_for_ladies" },
+  buy_13_handstand_usd: { sum: 13, lessons: 1, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "ameria", studio: "handstand" },
+  buy_132_handstand_usd: { sum: 132, lessons: 12, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "ameria", studio: "handstand" },
+  buy_144_handstand_usd: { sum: 144, lessons: 12, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "ameria", studio: "handstand" },
+  buy_360_handstand_usd: { sum: 360, lessons: 36, tag: "ds_usd_handstand_start", currency: "USD", paymentSystem: "ameria", studio: "handstand" },
 };
 
 // Объект с данными для различных типов кнопок
@@ -1063,7 +1202,7 @@ const studioDetails = {
     price: 54,
     currency: "EUR",
     tag: "handstand",
-    paymentSystem: "stripeEUR",
+    paymentSystem: "ameria",
   },
 };
 
@@ -1685,6 +1824,58 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag) {
 // Создаем и настраиваем Express-приложение
 const app = express();
 app.use(bodyParser.json()); // Используем JSON для обработки запросов от Telegram и Робокассы
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// --- Ameria VPOS HTTP routes ---
+app.post("/payments/ameria/init", async (req, res) => {
+  try {
+    const { amount, currency, email, fullName, tariffId, tariffLabel, courseName, locale, tgId, lessons, tag } = req.body || {};
+    if (!amount || !currency || !email) {
+      return res.status(400).json({ ok: false, error: "amount, currency, email required" });
+    }
+    const result = await initAmeriaPayment({
+      tgId: tgId || null,
+      amount: Number(amount),
+      currency: ["EUR", "USD"].includes(currency) ? currency : "EUR",
+      email,
+      fullName: fullName || "Client",
+      tariffId: tariffId || "",
+      tariffLabel: tariffLabel || `${amount} ${currency}`,
+      lessons: lessons || 1,
+      tag: tag || "",
+      courseName: courseName || "",
+      locale: locale || "ru",
+    });
+    return res.json(result);
+  } catch (e) {
+    console.error("Ameria init error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Init failed" });
+  }
+});
+app.get("/pay/ameria/return", (req, res) => {
+  const loc = (req.query.locale || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
+  const msg = loc === "en"
+    ? "Payment completed. You can return to the bot. We will confirm the payment shortly."
+    : "Оплата проведена. Вы можете вернуться в бота — подтверждение придёт в течение нескольких минут.";
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>${msg}</p></body></html>`);
+});
+app.post("/payments/ameria/check", async (req, res) => {
+  try {
+    const { paymentId } = req.body || {};
+    if (!paymentId) return res.status(400).json({ ok: false, error: "paymentId required" });
+    const result = await checkAmeriaPayment(paymentId);
+    return res.json(result);
+  } catch (e) {
+    console.error("Ameria check error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Check failed" });
+  }
+});
+
+const HTTP_PORT = process.env.PORT || 3000;
+app.listen(HTTP_PORT, () => {
+  console.log(`HTTP server listening on port ${HTTP_PORT}`);
+});
 
 // Обработчик команд бота
 bot.command("start", async (ctx) => {
@@ -2389,19 +2580,41 @@ bot.on("callback_query:data", async (ctx) => {
   } else if (session.step === "online_buttons") {
     console.log("генерирую ссылку для оплаты после нажатия кнопки с тарифом");
     const actionInfo = actionData[ctx.callbackQuery.data];
-    const { paymentLink, paymentId } = await generateSecondPaymentLink(
+    const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
       action,
-      session.email
+      session.email,
+      ctx.from.id
     );
 
     await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
-    await thirdTwoToAirtable(
-      ctx.from.id,
-      paymentId,
-      actionInfo.sum,
-      actionInfo.lessons,
-      actionInfo.tag
-    );
+    if (isAmeria) {
+      // Ameria: запись в Airtable уже в init, запускаем polling
+      const intervalMs = 12000;
+      const maxPolls = 110;
+      let pollCount = 0;
+      const iv = setInterval(async () => {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          clearInterval(iv);
+          return;
+        }
+        try {
+          const r = await checkAmeriaPayment(paymentId);
+          if (r.paid) {
+            clearInterval(iv);
+            await ctx.reply("Оплата прошла! Спасибо за покупку.");
+          }
+        } catch (_) {}
+      }, intervalMs);
+    } else {
+      await thirdTwoToAirtable(
+        ctx.from.id,
+        paymentId,
+        actionInfo.sum,
+        actionInfo.lessons,
+        actionInfo.tag
+      );
+    }
     session.userState = {};
     session.step = "completed";
     await session.save();
@@ -2542,21 +2755,42 @@ bot.on("callback_query:data", async (ctx) => {
 
     // Генерация ссылки для оплаты
     const actionInfo = actionData[action];
-    const { paymentLink, paymentId } = await generateSecondPaymentLink(
+    const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
       action,
-      email
+      email,
+      ctx.from.id
     );
 
     // Отправляем пользователю ссылку на оплату
     await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
 
-    await thirdTwoToAirtable(
-      ctx.from.id,
-      paymentId,
-      actionInfo.sum,
-      actionInfo.lessons,
-      actionInfo.tag
-    );
+    if (isAmeria) {
+      const intervalMs = 12000;
+      const maxPolls = 110;
+      let pollCount = 0;
+      const iv = setInterval(async () => {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          clearInterval(iv);
+          return;
+        }
+        try {
+          const r = await checkAmeriaPayment(paymentId);
+          if (r.paid) {
+            clearInterval(iv);
+            await ctx.reply("Оплата прошла! Спасибо за покупку.");
+          }
+        } catch (_) {}
+      }, intervalMs);
+    } else {
+      await thirdTwoToAirtable(
+        ctx.from.id,
+        paymentId,
+        actionInfo.sum,
+        actionInfo.lessons,
+        actionInfo.tag
+      );
+    }
   } else if (action.startsWith("a_net")) {
     console.log("НЕТ - не планиурет продолжать тренировки с нами");
     // Отправляем сообщение с просьбой поделиться причиной отказа
