@@ -101,7 +101,7 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
   const orderSeed = crypto.randomBytes(16).toString("hex");
   const orderId = makeOrderIdFromToken(orderSeed);
   const currCode = AMERIA_CURRENCY[currency] || "978";
-  const loc = (locale || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
+  const loc = "ru";
   const opaque = JSON.stringify({ tariffId, email, currency, locale: loc, courseName: courseName || "" });
   const description = (tariffLabel || `${amount} ${currency}`).substring(0, 255);
   const body = {
