@@ -131,7 +131,7 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
     `https://api.airtable.com/v0/${baseId}/${buyId}`,
     {
       fields: {
-        tgId: tgId != null ? String(tgId) : "",
+        tgId: tgId != null ? Number(tgId) : undefined,
         id_payment: paymentId,
         Sum: amount,
         Lessons: lessons,
