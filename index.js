@@ -364,10 +364,10 @@ function wait(ms) {
 }
 
 const RECIPIENTS_BY_STUDIO = {
-  "msc_youcan": ["-4510303967"], // Замените ID на реальные для этой студии
-  "msc_elfit": ["-4510303967"],
-  "spb_hk": ["-4510303967"],
-  "spb_spirit": ["-4510303967"],
+  "м. 1905г.": [-4510303967, 346342296], // админ + Женя
+  "м. Октябрьская": [-4510303967, 346342296], // админ + Женя
+  "м. Выборгская": [-4510303967, 582033795], // админ + Дима
+  "м. Московские Ворота": [-4510303967, 959134636], // админ + Иван
 };
 
 const actionData = {
@@ -1582,7 +1582,11 @@ function buildRescheduleSlotsData(apiData) {
       const weekdayShort = weekdayRaw.endsWith(".")
         ? weekdayRaw
         : `${weekdayRaw}.`;
-      const human = humanFormatter.format(date).replace(",", "");
+      const humanBase = humanFormatter.format(date).replace(",", "");
+      const human = humanBase.replace(
+        /^(пн|вт|ср|чт|пт|сб|вс)\s/,
+        (m) => m.slice(0, -1) + ". "
+      );
       return {
         weekdayShort,
         ddmm,
@@ -2497,8 +2501,7 @@ bot.on("callback_query:data", async (ctx) => {
       `Перенос пробной тренировки\n` +
       `Пользователь: ${username} (tgId ${ctx.from.id})\n` +
       `Студия: ${studioName}\n` +
-      `Новый слот: ${picked.human}\n` +
-      `Future_plan (Airtable): ${picked.ddmm}`;
+      `Новый слот: ${picked.human}\n`;
 
     for (const recipientId of recipients) {
       try {
@@ -3347,24 +3350,20 @@ bot.on("message:text", async (ctx) => {
       "Спасибо! Я свяжусь с тренером и подберу для вас удобное время. Как только согласуем все детали, по ссылке ниже можно будет оплатить занятие для подтверждения записи. Ожидайте, скоро вернусь с новостями 😊"
     );
 
-    // Получаем список адресатов для этой студии
-    const recipients = RECIPIENTS_BY_STUDIO[session.studio] || []; // Берем студию из сессии
-    const username = ctx.from.username ? `@${ctx.from.username}` : "Без ника"; // Определяем никнейм пользователя или заменяем на "Без ника"
+    // Получаем список адресатов для этой студии (админ + тренер)
+    const recipients = RECIPIENTS_BY_STUDIO[session.studio] || [-4510303967];
+    const username = ctx.from.username ? `@${ctx.from.username}` : "Без ника";
+    const notifyText = `Запрос на персональную тренировку от ${username}\nГород: ${city} & Студия: ${place}:\n${ctx.message.text}`;
 
-    // Отправляем сообщение каждому адресату из списка для этой студии
-    try {
-      await bot.api.sendMessage(
-        -4510303967,
-        `Запрос на персональную тренировку от ${username}\nГород: ${city} & Студия: ${place}:\n${ctx.message.text}`
-      );
-    } catch (error) {
-      console.error(
-        `Не удалось отправить сообщение пользователю ${recipientId}:`,
-        error
-      );
-      // Можно добавить дополнительные действия, например:
-      // - логирование ошибки в базе данных
-      // - уведомление администратора о проблеме
+    for (const recipientId of recipients) {
+      try {
+        await bot.api.sendMessage(recipientId, notifyText);
+      } catch (error) {
+        console.error(
+          `[персоналка] не удалось отправить ${recipientId}:`,
+          error?.message || error
+        );
+      }
     }
 
     // Генерация клавиатуры для персональных тренировок на основе priceTag
