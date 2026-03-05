@@ -1555,6 +1555,10 @@ function buildRescheduleSlotsData(apiData) {
     minute: "2-digit",
     timeZone: "Europe/Moscow",
   });
+  const weekdayFormatter = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "short",
+    timeZone: "Europe/Moscow",
+  });
   const humanFormatter = new Intl.DateTimeFormat("ru-RU", {
     weekday: "short",
     day: "2-digit",
@@ -1574,8 +1578,13 @@ function buildRescheduleSlotsData(apiData) {
 
       const ddmm = ddMmFormatter.format(date).replace(/\//g, ".");
       const hhmm = timeFormatter.format(date);
+      const weekdayRaw = weekdayFormatter.format(date).toLowerCase().trim();
+      const weekdayShort = weekdayRaw.endsWith(".")
+        ? weekdayRaw
+        : `${weekdayRaw}.`;
       const human = humanFormatter.format(date).replace(",", "");
       return {
+        weekdayShort,
         ddmm,
         hhmm,
         human,
@@ -3547,7 +3556,7 @@ bot.on("message:text", async (ctx) => {
         selectableSlots.forEach((slot, idx) => {
           slotsKeyboard
             .add({
-              text: `${slot.ddmm} ${slot.hhmm}`,
+              text: `${slot.weekdayShort} ${slot.ddmm} в ${slot.hhmm}`,
               callback_data: `resched_pick_${idx}`,
             })
             .row();
