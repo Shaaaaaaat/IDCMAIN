@@ -1310,6 +1310,53 @@ function formatMoney(sum, currency) {
   return `${s} ${c || ""}`.trim();
 }
 
+function formatSlotStartDate(slotStartAt) {
+  const raw = String(slotStartAt || "").trim();
+  if (!raw) return "";
+
+  // raw_parse: extract date from string as-is without timezone normalization
+  const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) return `${ymd[3]}.${ymd[2]}`;
+
+  const dmy = raw.match(/^(\d{2})\.(\d{2})(?:\.(\d{4}))?/);
+  if (dmy) return `${dmy[1]}.${dmy[2]}`;
+
+  return "";
+}
+
+const GYM_STUDIO_META = {
+  msk_youcan: {
+    name: "You Can",
+    address:
+      "м. Улица 1905 года.\nУл. Большая Декабрьская, д.3 с25. (ТЦ «Электроника на Пресне»).\nПо указателям в ТЦ нужно найти DNS, зал располагается справа от него (за ориентир можно взять павильон Д5).",
+    trainer: "Женя",
+    mapUrl:
+      "https://storage.yandexcloud.net/idc-website-app/%D0%BA%D0%B0%D0%BA%20%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%D1%81%D1%8F/ycg.jpeg",
+    chatUrl: "https://t.me/+ofJDca2V3y9kNDVi",
+  },
+  msk_elfit: {
+    name: "El Fit",
+    address: "Калужская площадь, 1к2, 3 этаж",
+    trainer: "Женя",
+    mapUrl: "https://storage.yandexcloud.net/idc-website-app/%D0%BA%D0%B0%D0%BA%20%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%D1%81%D1%8F/elfit.MP4",
+    chatUrl: "https://t.me/+lk7Pdjp3AP81NmNi",
+  },
+  spb_spirit: {
+    name: "Spirit",
+    address: "м. Московские Ворота, ул. Заставская, 33П.",
+    trainer: "Иван",
+    mapUrl: "https://storage.yandexcloud.net/idc-website-app/%D0%BA%D0%B0%D0%BA%20%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%D1%81%D1%8F/spirit.jpg",
+    chatUrl: "https://t.me/+R9feJDYgxJtJCSbI",
+  },
+  spb_hellskitchen: {
+    name: "Hells Kitchen",
+    address: "м. Выборгская, Малый Сампсониевский пр., дом 2",
+    trainer: "Дима",
+    mapUrl: "",
+    chatUrl: "https://t.me/+dXJCxBPP9whkZjEy",
+  },
+};
+
 async function patchAirtableRecord(tableId, recordId, fields) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
@@ -1375,13 +1422,28 @@ async function getUserInfo(tgId) {
       const email = fields.email || "нет email";
       const finalDay = fields.Final_day;
       const tag = fields.Tag || "неизвестен";
+      const studioRaw =
+        fields.studio_id ?? fields.studioId ?? fields.Studio_ID ?? "";
+      const studioId = Array.isArray(studioRaw)
+        ? String(
+            studioRaw[0]?.name ?? studioRaw[0] ?? ""
+          ).trim()
+        : String(studioRaw || "").trim();
       const balance =
         fields.Balance !== undefined
           ? fields.Balance
           : "0";
       const currency = fields.Currency || "неизвестна";
       const oldPrices = !!fields.old_prices;
-      return { email, finalDay, tag, balance, currency, oldPrices };
+      return {
+        email,
+        finalDay,
+        tag,
+        studioId,
+        balance,
+        currency,
+        oldPrices,
+      };
     } else {
       return null; // Если запись не найдена, возвращаем null
     }
@@ -1392,6 +1454,124 @@ async function getUserInfo(tgId) {
     );
     return null; // В случае ошибки возвращаем null
   }
+}
+
+const RESCHEDULE_ALLOWED_BALANCES = new Set([950, 1100]);
+const RESCHEDULE_STUDIO_IDS = new Set([
+  "msk_youcan",
+  "msk_elfit",
+  "spb_hkc",
+  "spb_spirit",
+]);
+
+function mapTagToStudioId(tagRaw) {
+  const tag = String(tagRaw || "").trim();
+  const mapping = {
+    MSC_group_YCG: "msk_youcan",
+    MSC_personal_YCG: "msk_youcan",
+    MSC_group_ELF: "msk_elfit",
+    MSC_personal_ELF: "msk_elfit",
+    SPB_group_HKC: "spb_hkc",
+    SPB_personal_HKC: "spb_hkc",
+    SPB_group_SPI: "spb_spirit",
+    SPB_personal_SPI: "spb_spirit",
+    SPB_group_RTC: null,
+    SPB_personal_RTC: null,
+  };
+
+  return Object.prototype.hasOwnProperty.call(mapping, tag)
+    ? mapping[tag]
+    : null;
+}
+
+function resolveRescheduleStudioId(userInfo) {
+  const directStudioId = String(userInfo?.studioId || "").trim().toLowerCase();
+  if (RESCHEDULE_STUDIO_IDS.has(directStudioId)) return directStudioId;
+  return mapTagToStudioId(userInfo?.tag);
+}
+
+async function fetchScheduleByStudioId(studioId) {
+  const url = "https://calisthenics.ru/api/schedule";
+  try {
+    const response = await axios.get(url, {
+      params: { studioId, product: "trial", days: 7 },
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+
+    if (response.status === 200) {
+      return { ok: true, status: 200, data: response.data || {} };
+    }
+
+    return {
+      ok: false,
+      status: response.status,
+      data: response.data || null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error.message || "Schedule API request failed",
+    };
+  }
+}
+
+function buildRescheduleReplyText(apiData) {
+  const noSlotsText =
+    "На ближайшие 7 дней слотов нет. Напишите нашему менеджеру Никите @IDC_manager, чтобы уточнить расписание.";
+  const notices = Array.isArray(apiData?.notices)
+    ? apiData.notices.filter((n) => String(n || "").trim())
+    : [];
+  const slots = Array.isArray(apiData?.slots) ? [...apiData.slots] : [];
+
+  slots.sort((a, b) => {
+    const aIso = new Date(a?.startAtISO || 0).getTime();
+    const bIso = new Date(b?.startAtISO || 0).getTime();
+    return aIso - bIso;
+  });
+
+  const parts = [];
+
+  if (notices.length) {
+    parts.push(notices.join("\n"));
+  }
+
+  if (!slots.length) {
+    parts.push(noSlotsText);
+    return parts.join("\n\n");
+  }
+
+  const formatter = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "short",
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Moscow",
+  });
+
+  const now = Date.now();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+  const slotLines = slots
+    .map((slot) => {
+      const raw = slot?.startAtLocal || slot?.startAtISO;
+      const date = raw ? new Date(raw) : null;
+      if (!date || Number.isNaN(date.getTime())) return null;
+      const ts = date.getTime();
+      if (ts < now || ts > now + sevenDaysMs) return null;
+      return `• ${formatter.format(date).replace(",", "")}`;
+    })
+    .filter(Boolean);
+
+  if (!slotLines.length) {
+    parts.push(noSlotsText);
+    return parts.join("\n\n");
+  }
+
+  parts.push(["Расписание занятий:", ...slotLines].join("\n"));
+  return parts.join("\n\n");
 }
 
 // Функция для генерации клавиатуры на основе тега пользователя
@@ -2005,6 +2185,16 @@ bot.command("start", async (ctx) => {
         const fio = f.FIO || f.Fio || f.fullName || f.name || "друг";
         const sum = f.Sum ?? f.sum;
         const currency = f.Currency || f.currency;
+        const formatRaw = f.format ?? f.Format ?? "";
+        const formatValue = Array.isArray(formatRaw)
+          ? String(formatRaw[0] || "").toLowerCase()
+          : String(formatRaw || "").toLowerCase();
+        const studioRaw = f.studio_id ?? f.studioId ?? f.Studio_ID ?? "";
+        const studioId = Array.isArray(studioRaw)
+          ? String(studioRaw[0] || "")
+          : String(studioRaw || "");
+        const slotStartAt = f.slot_start_at ?? f.slotStartAt ?? f.Slot_start_at ?? "";
+        const firstWorkoutDate = formatSlotStartDate(slotStartAt);
     
         // обновляем запись: ставим Matched и сохраняем tgId
         await patchAirtableRecord(payment.tableId, payment.recordId, {
@@ -2013,9 +2203,56 @@ bot.command("start", async (ctx) => {
           Nickname: ctx.from.username || "", // если нужно
         });
     
-        await ctx.reply(
-          `Привет, ${fio}! ✅\nОплата подтверждена: ${formatMoney(sum, currency)} зачислено на ваш счёт.\n\nМожешь продолжать — оплата уже отображается в системе.`
-        );
+        if (formatValue === "gym") {
+          const meta = GYM_STUDIO_META[studioId] || null;
+          const studioName = meta?.name || "нашей студии";
+          const studioAddress = meta?.address || "Адрес и детали будут отправлены менеджером.";
+          const trainerName = meta?.trainer || "тренер";
+          const dateLine = firstWorkoutDate
+            ? `${firstWorkoutDate} состоится ваша первая тренировка в формате I Do Calisthenics.`
+            : "Скоро состоится ваша первая тренировка в формате I Do Calisthenics.";
+
+          await ctx.reply(
+            `Ура, ${fio}, оплата прошла успешно!\n${dateLine}\n\nЗал называется ${studioName} и находится по адресу:\n${studioAddress}\n\nС собой берём удобную спортивную форму и бутылочку воды, также при необходимости принадлежности для душа.\n\nТренер ${trainerName} будет ждать вас в зале 😊`
+          );
+          await ctx.reply(
+            "❗️ Важно: если вам нужно перенести пробную тренировку, воспользуйтесь командой /reschedule и выберите удобную дату.\n\nОбратите внимание: пройти тренировку необходимо в течение 4 недель после оплаты.\nЕсли вам нужно больше времени, вы можете написать нашему менеджеру Никите — @IDC_manager — и попросить продлить срок."
+          );
+
+          const gymKb = new InlineKeyboard();
+          if (meta?.mapUrl) {
+            gymKb.add({ text: "📍 Как добраться", url: meta.mapUrl });
+          }
+          if (meta?.chatUrl) {
+            if (meta?.mapUrl) gymKb.row();
+            gymKb.add({ text: "💬 Присоединиться к чату", url: meta.chatUrl });
+          }
+          if (meta?.mapUrl || meta?.chatUrl) {
+            await ctx.reply("Полезные ссылки:", { reply_markup: gymKb });
+          }
+        } else if (formatValue === "ds") {
+          await ctx.reply(
+            "Ура, оплата прошла успешно!\n\nВскоре на вашу почту придет письмо с темой [TrueCoach] Invitation, содержащее приглашение для доступа к нашему приложению, где будет стоять первая тренировка.\n\nПосле прохождения первой тренировки наш тренер свяжется с вами и предоставит подробную обратную связь. Для удобства рекомендуем скачать мобильную версию приложения 👇🏻"
+          );
+          await ctx.reply(
+            "Краткая инструкция как выполнять тест силы от I Do Calisthenics:\n\nВсего 5-7 упражнений (в зависимости от выбранного курса). Для каждого упражнения в приложении указано возможное количество вариаций (от 1 до 3): вам надо выбрать и выполнить только одну вариацию и один подход в каждом упражнении — ту, которая для вас не самая простая, но с которой вы уверенно справитесь.\n\nВажно: все упражнения необходимо снять на видео и загрузить в приложение — это поможет нам определить ваш текущий уровень и составить последующие тренировки эффективно.",
+            {
+              reply_markup: new InlineKeyboard()
+                .add({
+                  text: "🍎 Скачать для iOS",
+                  url: "https://apps.apple.com/am/app/truecoach-for-clients/id1439127794",
+                })
+                .add({
+                  text: "🤖 Скачать для Android",
+                  url: "https://play.google.com/store/apps/details?id=co.truecoach.client",
+                }),
+            }
+          );
+        } else {
+          await ctx.reply(
+            `Привет, ${fio}! ✅\nОплата подтверждена: ${formatMoney(sum, currency)} зачислено на ваш счёт.\n\nМожешь продолжать — оплата уже отображается в системе.`
+          );
+        }
     
         // дальше можно сразу показать меню для существующего клиента:
         // если после matched запись попадает в Clients — то можно вызвать handleExistingUserScenario
@@ -3113,15 +3350,64 @@ bot.on("message:text", async (ctx) => {
         const tgId = ctx.from.id;
         const result = await getUserInfo(tgId);
 
-        if (result.balance <= 0) {
-          // ⬅️ Теперь проверяем, если баланс 0 или меньше
-          await ctx.reply("У вас нет действующего абонемента.");
-          return; // ⬅️ Останавливаем выполнение дальше
-        } else if (result.balance === 950) {
-          const tag = result.tag;
-          const telegramId = ctx.from.id; // ID пользователя Telegram
-          await resendToWebhook(tag, telegramId);
+        if (!result) {
+          await ctx.reply(
+            "Не удалось найти ваш профиль. Пожалуйста, напишите менеджеру @IDC_Manager."
+          );
+          return;
         }
+
+        const balance = Number(result.balance || 0);
+        if (!RESCHEDULE_ALLOWED_BALANCES.has(balance)) {
+          await ctx.reply("У вас нет действующего абонемента.");
+          return;
+        }
+
+        const studioId = resolveRescheduleStudioId(result);
+        if (!studioId) {
+          await ctx.reply(
+            "Не удалось определить вашу студию для переноса. Напишите менеджеру @IDC_Manager."
+          );
+          return;
+        }
+
+        const scheduleResp = await fetchScheduleByStudioId(studioId);
+        if (!scheduleResp.ok) {
+          if (scheduleResp.status >= 500 || scheduleResp.status === 0) {
+            await ctx.reply("Сервис расписания временно недоступен.");
+          } else if (scheduleResp.status === 400) {
+            console.error(
+              "[reschedule] schedule api 400 (integration bug):",
+              JSON.stringify({
+                tgId,
+                studioId,
+                status: scheduleResp.status,
+                body: scheduleResp.data || null,
+              })
+            );
+            await ctx.reply(
+              "Не удалось получить расписание. Напишите менеджеру @IDC_Manager."
+            );
+          } else {
+            await ctx.reply(
+              "Не удалось получить расписание. Попробуйте позже или напишите менеджеру @IDC_Manager."
+            );
+          }
+
+          console.error(
+            "[reschedule] schedule api non-200:",
+            JSON.stringify({
+              tgId,
+              studioId,
+              status: scheduleResp.status,
+              body: scheduleResp.data || null,
+              error: scheduleResp.error || null,
+            })
+          );
+          return;
+        }
+
+        await ctx.reply(buildRescheduleReplyText(scheduleResp.data));
         break;
       case "/operator":
         console.log("Вызвал /operator");
