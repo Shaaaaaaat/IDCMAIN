@@ -364,11 +364,10 @@ function wait(ms) {
 }
 
 const RECIPIENTS_BY_STUDIO = {
-  "м. 1905г.": ["-4510303967", "346342296"], // Замените ID на реальные для этой студии
-  "м. Петроградская": ["-4510303967", "468995031"],
-  "м. Выборгская": ["-4510303967", "582033795"],
-  "м. Московские Ворота": ["-4510303967", "206607601"],
-  "ул. Бузанда": ["-4510303967", "256168227"],
+  "msc_youcan": ["-4510303967"], // Замените ID на реальные для этой студии
+  "msc_elfit": ["-4510303967"],
+  "spb_hk": ["-4510303967"],
+  "spb_spirit": ["-4510303967"],
 };
 
 const actionData = {
@@ -1463,6 +1462,21 @@ const RESCHEDULE_STUDIO_IDS = new Set([
   "spb_hkc",
   "spb_spirit",
 ]);
+const RESCHEDULE_NO_SLOTS_TEXT =
+  "На ближайшие 7 дней слотов нет. Напишите нашему менеджеру Никите @IDC_manager, чтобы уточнить расписание.";
+const RESCHEDULE_ADMIN_CHAT_ID = -4510303967;
+const RESCHEDULE_TRAINER_BY_STUDIO_ID = {
+  msk_youcan: 346342296, // Женя
+  msk_elfit: 346342296, // Женя
+  spb_spirit: 959134636, // Иван
+  spb_hkc: 582033795, // Дима
+};
+const RESCHEDULE_STUDIO_NAMES = {
+  msk_youcan: "You Can (м. 1905г.)",
+  msk_elfit: "El Fit (м. Октябрьская)",
+  spb_spirit: "Spirit (м. Московские Ворота)",
+  spb_hkc: "Hells Kitchen (м. Выборгская)",
+};
 
 function mapTagToStudioId(tagRaw) {
   const tag = String(tagRaw || "").trim();
@@ -1517,9 +1531,63 @@ async function fetchScheduleByStudioId(studioId) {
   }
 }
 
+function buildRescheduleSlotsData(apiData) {
+  const notices = Array.isArray(apiData?.notices)
+    ? apiData.notices.filter((n) => String(n || "").trim())
+    : [];
+  const rawSlots = Array.isArray(apiData?.slots) ? [...apiData.slots] : [];
+
+  rawSlots.sort((a, b) => {
+    const aIso = new Date(a?.startAtISO || 0).getTime();
+    const bIso = new Date(b?.startAtISO || 0).getTime();
+    return aIso - bIso;
+  });
+
+  const now = Date.now();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const ddMmFormatter = new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+  });
+  const timeFormatter = new Intl.DateTimeFormat("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Moscow",
+  });
+  const humanFormatter = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "short",
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Moscow",
+  });
+
+  const slots = rawSlots
+    .map((slot) => {
+      const raw = slot?.startAtLocal || slot?.startAtISO;
+      const date = raw ? new Date(raw) : null;
+      if (!date || Number.isNaN(date.getTime())) return null;
+      const ts = date.getTime();
+      if (ts < now || ts > now + sevenDaysMs) return null;
+
+      const ddmm = ddMmFormatter.format(date).replace(/\//g, ".");
+      const hhmm = timeFormatter.format(date);
+      const human = humanFormatter.format(date).replace(",", "");
+      return {
+        ddmm,
+        hhmm,
+        human,
+      };
+    })
+    .filter(Boolean);
+
+  return { notices, slots };
+}
+
 function buildRescheduleReplyText(apiData) {
-  const noSlotsText =
-    "На ближайшие 7 дней слотов нет. Напишите нашему менеджеру Никите @IDC_manager, чтобы уточнить расписание.";
+  const noSlotsText = RESCHEDULE_NO_SLOTS_TEXT;
   const notices = Array.isArray(apiData?.notices)
     ? apiData.notices.filter((n) => String(n || "").trim())
     : [];
@@ -1915,12 +1983,6 @@ async function sendDateToAirtable2(tgId, date) {
 
     const record = records[0];
     const recordId = record.id;
-    const fields = record.fields;
-
-    // Извлекаем нужные данные
-    const name = fields.FIO3 || "Неизвестный пользователь";
-    const oldDate = fields.Future_plan || "не указана";
-    const tag = fields.Tag || "неизвестен";
 
     // Шаг 2: Обновить запись
     const updateUrl = `${url}/${recordId}`;
@@ -1931,11 +1993,13 @@ async function sendDateToAirtable2(tgId, date) {
     };
     await axios.patch(updateUrl, data, { headers });
     console.log("Дата успешно обновлена в Airtable.");
+    return true;
   } catch (error) {
     console.error(
       "Ошибка при обновлении даты в Airtable:",
       error.response ? error.response.data : error.message
     );
+    return false;
   }
 }
 
@@ -2387,6 +2451,66 @@ bot.command("start", async (ctx) => {
 bot.on("callback_query:data", async (ctx) => {
   const action = ctx.callbackQuery.data;
   const session = await Session.findOne({ userId: ctx.from.id.toString() });
+
+  if (action.startsWith("resched_pick_")) {
+    const pickedIndex = Number(action.replace("resched_pick_", ""));
+    const slots = Array.isArray(session?.userState?.rescheduleSlots)
+      ? session.userState.rescheduleSlots
+      : [];
+    const studioId = String(session?.userState?.rescheduleStudioId || "").trim();
+    const picked = Number.isInteger(pickedIndex) ? slots[pickedIndex] : null;
+
+    if (!picked || !picked.ddmm || !picked.human) {
+      await ctx.answerCallbackQuery({
+        text: "Список слотов устарел. Нажмите /reschedule ещё раз.",
+        show_alert: true,
+      });
+      return;
+    }
+
+    const updated = await sendDateToAirtable2(ctx.from.id, picked.ddmm);
+    if (!updated) {
+      await ctx.answerCallbackQuery({
+        text: "Не удалось сохранить перенос. Попробуйте позже.",
+        show_alert: true,
+      });
+      return;
+    }
+
+    await ctx.answerCallbackQuery({ text: "Слот выбран" });
+    await ctx.reply(`✅ Ваша тренировка перенесена на ${picked.human}.`);
+
+    const username = ctx.from.username ? `@${ctx.from.username}` : "без ника";
+    const studioName = RESCHEDULE_STUDIO_NAMES[studioId] || studioId || "неизвестно";
+    const trainerId = RESCHEDULE_TRAINER_BY_STUDIO_ID[studioId];
+    const recipients = [RESCHEDULE_ADMIN_CHAT_ID, trainerId].filter(Boolean);
+    const notifyText =
+      `Перенос пробной тренировки\n` +
+      `Пользователь: ${username} (tgId ${ctx.from.id})\n` +
+      `Студия: ${studioName}\n` +
+      `Новый слот: ${picked.human}\n` +
+      `Future_plan (Airtable): ${picked.ddmm}`;
+
+    for (const recipientId of recipients) {
+      try {
+        await bot.api.sendMessage(recipientId, notifyText);
+      } catch (err) {
+        console.error(
+          `[reschedule] notify failed for ${recipientId}:`,
+          err?.message || err
+        );
+      }
+    }
+
+    session.userState = {
+      ...(session.userState || {}),
+      rescheduleSlots: [],
+      rescheduleStudioId: "",
+    };
+    session.step = "completed";
+    await session.save();
+    return;
+  }
 
   if (
     action === "city_moscow" ||
@@ -3407,7 +3531,46 @@ bot.on("message:text", async (ctx) => {
           return;
         }
 
-        await ctx.reply(buildRescheduleReplyText(scheduleResp.data));
+        const { notices, slots } = buildRescheduleSlotsData(scheduleResp.data);
+
+        if (!slots.length) {
+          const parts = [];
+          if (notices.length) parts.push(notices.join("\n"));
+          parts.push(RESCHEDULE_NO_SLOTS_TEXT);
+          await ctx.reply(parts.join("\n\n"));
+          return;
+        }
+
+        const maxButtons = 30;
+        const selectableSlots = slots.slice(0, maxButtons);
+        const slotsKeyboard = new InlineKeyboard();
+        selectableSlots.forEach((slot, idx) => {
+          slotsKeyboard
+            .add({
+              text: `${slot.ddmm} ${slot.hhmm}`,
+              callback_data: `resched_pick_${idx}`,
+            })
+            .row();
+        });
+
+        session.userState = {
+          ...(session.userState || {}),
+          rescheduleStudioId: studioId,
+          rescheduleSlots: selectableSlots.map((slot) => ({
+            ddmm: slot.ddmm,
+            human: slot.human,
+          })),
+        };
+        session.step = "awaiting_reschedule_slot";
+        await session.save();
+
+        const promptParts = [];
+        if (notices.length) promptParts.push(notices.join("\n"));
+        promptParts.push("📅 Выберите новую дату тренировки:");
+
+        await ctx.reply(promptParts.join("\n\n"), {
+          reply_markup: slotsKeyboard,
+        });
         break;
       case "/operator":
         console.log("Вызвал /operator");
