@@ -3618,7 +3618,7 @@ bot.on("message:text", async (ctx) => {
 
       const kb = new InlineKeyboard();
       if (!userInfo) {
-        // Новичок: показываем пробное + новые цены
+        // Новичок: показываем пробное + новые цены + депозит
         kb.add({
           text: "Пробное — 1 100₽",
           callback_data:
@@ -3639,7 +3639,8 @@ bot.on("message:text", async (ctx) => {
             studioType === "elf"
               ? "buy_14400_msc_group_elf"
               : "buy_14400_msc_group_ycg",
-        });
+        }).row();
+        kb.add({ text: "Пополнить депозит (любая сумма)", callback_data: "deposit" });
       } else if (userInfo.oldPrices === true) {
         // Действующий клиент со старыми ценами
         kb.add({
@@ -3723,36 +3724,17 @@ bot.on("message:text", async (ctx) => {
       else if (userInfo.tag.includes("SPB") && userInfo.tag.includes("SPI"))
         personalTag = "SPB_personal_SPI";
     }
-    // Строим клавиатуру с новыми тарифами персоналок
-    const kb = new InlineKeyboard();
-    const action1 =
-      personalTag === "MSC_personal_ELF"
-        ? "buy_4900_personal_msc_elf"
-        : personalTag === "SPB_personal_SPI"
-        ? "buy_4900_personal_spb_spi"
-        : personalTag === "SPB_personal_HKC"
-        ? "buy_4900_personal_spb_hkc"
-        : personalTag === "SPB_personal_RTC"
-        ? "buy_4900_personal_spb_rtc"
-        : "buy_4900_personal_msc_ycg";
-    const action2 =
-      personalTag === "MSC_personal_ELF"
-        ? "buy_6600_personal_msc_elf"
-        : personalTag === "SPB_personal_SPI"
-        ? "buy_6600_personal_spb_spi"
-        : personalTag === "SPB_personal_HKC"
-        ? "buy_6600_personal_spb_hkc"
-        : personalTag === "SPB_personal_RTC"
-        ? "buy_6600_personal_spb_rtc"
-        : "buy_6600_personal_msc_ycg";
-    kb
-      .add({ text: "1 тренировка (1 чел.) — 4 900₽", callback_data: action1 })
-      .row()
-      .add({
-        text: "1 тренировка (2–3 чел.) — 6 600₽",
-        callback_data: action2,
-      });
-    await ctx.reply("Выберите тариф:", { reply_markup: kb });
+    const oldPrices = !!userInfo?.oldPrices;
+    if (personalTag) {
+      const keyboard = generateKeyboard(personalTag, oldPrices);
+      if (keyboard) {
+        await ctx.reply("Выберите тариф:", { reply_markup: keyboard });
+      } else {
+        await ctx.reply("Не удалось определить тарифы. Напишите менеджеру @IDC_Manager.");
+      }
+    } else {
+      await ctx.reply("Не удалось определить студию. Напишите менеджеру @IDC_Manager.");
+    }
   } else if (userMessage === "Купить онлайн тренировки") {
     const tgId = ctx.from.id;
     const userInfo = await getUserInfo(tgId);
