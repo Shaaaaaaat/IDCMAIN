@@ -3337,7 +3337,7 @@ bot.on("message:text", async (ctx) => {
     const tag = userInfo?.tag || "Отсутствует";
     const paymentId = generateUniqueId();
     const paymentLink = generatePaymentLink(paymentId, sum, userInfo.email);
-    await ctx.reply(`Отлично! Перейдите по ссылке для оплаты: ${paymentLink}`);
+    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
 
     // Отправляем данные о депозите в Airtable
     await sendTwoToAirtable(
