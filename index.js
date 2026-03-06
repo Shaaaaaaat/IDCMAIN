@@ -481,13 +481,6 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_32400_personal_mscycg: {
-    sum: 32400,
-    lessons: 10,
-    tag: "MSC_personal_YCG",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-  },
   buy_5000_personal_mscycg: {
     sum: 5000,
     lessons: 1,
@@ -519,13 +512,6 @@ const actionData = {
   buy_3600_personal_mscelf: {
     sum: 3600,
     lessons: 1,
-    tag: "MSC_personal_ELF",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-  },
-  buy_32400_personal_mscelf: {
-    sum: 32400,
-    lessons: 10,
     tag: "MSC_personal_ELF",
     currency: "RUB",
     paymentSystem: "robokassa",
@@ -572,13 +558,6 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_32400_personal_spbspi: {
-    sum: 32400,
-    lessons: 10,
-    tag: "SPB_personal_SPI",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-  },
   buy_5000_personal_spbspi: {
     sum: 5000,
     lessons: 1,
@@ -621,13 +600,6 @@ const actionData = {
     currency: "RUB",
     paymentSystem: "robokassa",
   },
-  buy_32400_personal_spbrtc: {
-    sum: 32400,
-    lessons: 10,
-    tag: "SPB_personal_RTC",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-  },
   buy_5000_personal_spbrtc: {
     sum: 5000,
     lessons: 1,
@@ -666,13 +638,6 @@ const actionData = {
   buy_3600_personal_spbhkc: {
     sum: 3600,
     lessons: 1,
-    tag: "SPB_personal_HKC",
-    currency: "RUB",
-    paymentSystem: "robokassa",
-  },
-  buy_32400_personal_spbhkc: {
-    sum: 32400,
-    lessons: 10,
     tag: "SPB_personal_HKC",
     currency: "RUB",
     paymentSystem: "robokassa",
@@ -993,6 +958,70 @@ const buttonsData = {
         callback_data: "deposit",
       },
     ],
+    MSCYCG_NEW: [
+      {
+        text: "1 занятие (1 500₽) — действует 4 недели",
+        callback_data: "buy_1500_msc_group_ycg",
+      },
+      {
+        text: "12 занятий (14 400₽) — действует 8 недель",
+        callback_data: "buy_14400_msc_group_ycg",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    MSCELF_NEW: [
+      {
+        text: "1 занятие (1 500₽) — действует 4 недели",
+        callback_data: "buy_1500_msc_group_elf",
+      },
+      {
+        text: "12 занятий (14 400₽) — действует 8 недель",
+        callback_data: "buy_14400_msc_group_elf",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    MSCYCG_NEW_WITH_TRIAL: [
+      {
+        text: "Пробное (1 100₽) — действует 4 недели",
+        callback_data: "buy_1100_msc_group_ycg_trial",
+      },
+      {
+        text: "1 занятие (1 500₽) — действует 4 недели",
+        callback_data: "buy_1500_msc_group_ycg",
+      },
+      {
+        text: "12 занятий (14 400₽) — действует 8 недель",
+        callback_data: "buy_14400_msc_group_ycg",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    MSCELF_NEW_WITH_TRIAL: [
+      {
+        text: "Пробное (1 100₽) — действует 4 недели",
+        callback_data: "buy_1100_msc_group_elf_trial",
+      },
+      {
+        text: "1 занятие (1 500₽) — действует 4 недели",
+        callback_data: "buy_1500_msc_group_elf",
+      },
+      {
+        text: "12 занятий (14 400₽) — действует 8 недель",
+        callback_data: "buy_14400_msc_group_elf",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
     SPBSPI: [
       {
         text: "12 занятий (13 200₽) — действует 8 недель",
@@ -1061,10 +1090,6 @@ const buttonsData = {
   personal: {
     MSCYCG: [
       {
-        text: "10 занятий (32 400₽) — действует 6 недель",
-        callback_data: "buy_32400_personal_mscycg",
-      },
-      {
         text: "1 занятие (3 600₽) — действует 4 недели",
         callback_data: "buy_3600_personal_mscycg",
       },
@@ -1082,10 +1107,6 @@ const buttonsData = {
       },
     ],
     MSCELF: [
-      {
-        text: "10 занятий (32 400₽) — действует 6 недель",
-        callback_data: "buy_32400_personal_mscelf",
-      },
       {
         text: "1 занятие (3 600₽) — действует 4 недели",
         callback_data: "buy_3600_personal_mscelf",
@@ -1105,10 +1126,6 @@ const buttonsData = {
     ],
     SPBSPI: [
       {
-        text: "10 занятий (32 400₽) — действует 6 недель",
-        callback_data: "buy_32400_personal_spbspi",
-      },
-      {
         text: "1 занятие (3 600₽) — действует 4 недели",
         callback_data: "buy_3600_personal_spbspi",
       },
@@ -1127,10 +1144,6 @@ const buttonsData = {
     ],
     SPBRTC: [
       {
-        text: "10 занятий (32 400₽) — действует 6 недель",
-        callback_data: "buy_32400_personal_spbrtc",
-      },
-      {
         text: "1 занятие (3 600₽) — действует 4 недели",
         callback_data: "buy_3600_personal_spbrtc",
       },
@@ -1148,10 +1161,6 @@ const buttonsData = {
       },
     ],
     SPBHKC: [
-      {
-        text: "10 занятий (32 400₽) — действует 6 недель",
-        callback_data: "buy_32400_personal_spbhkc",
-      },
       {
         text: "1 занятие (3 600₽) — действует 4 недели",
         callback_data: "buy_3600_personal_spbhkc",
@@ -1237,16 +1246,6 @@ const buttonsData = {
       {
         text: "Пополнить депозит (любая сумма)",
         callback_data: "deposit",
-      },
-    ],
-    YVNGFG: [
-      {
-        text: "1 занятие (12500դր.) — действует 4 недели",
-        callback_data: "buy_12500_personal_yvngfg",
-      },
-      {
-        text: "Сплит на двоих (17000դր.) — действует 4 недели",
-        callback_data: "buy_17000_personal_yvngfg",
       },
     ],
   },
@@ -1739,9 +1738,15 @@ function generateKeyboard(tag, oldPrices) {
   } else if (tag.includes("ds") && tag.includes("eur")) {
     buttonsData.ds.EUR.forEach((button) => keyboard.add(button).row());
   } else if (tag === "MSC_group_YCG") {
-    buttonsData.group.MSCYCG.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.group.MSCYCG : buttonsData.group.MSCYCG_NEW;
+    (set || buttonsData.group.MSCYCG || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else if (tag === "MSC_group_ELF") {
-    buttonsData.group.MSCELF.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.group.MSCELF : buttonsData.group.MSCELF_NEW;
+    (set || buttonsData.group.MSCELF || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else if (tag === "SPB_group_SPI") {
     buttonsData.group.SPBSPI.forEach((button) => keyboard.add(button).row());
   } else if (tag === "SPB_group_RTC") {
@@ -3702,64 +3707,27 @@ bot.on("message:text", async (ctx) => {
       else if (userInfo?.tag?.includes("YCG")) studioType = "ycg";
 
       const kb = new InlineKeyboard();
+      let buttonSet = [];
       if (!userInfo) {
-        // Новичок: показываем пробное + новые цены + депозит
-        kb.add({
-          text: "Пробное — 1 100₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_1100_msc_group_elf_trial"
-              : "buy_1100_msc_group_ycg_trial",
-        }).row();
-        kb.add({
-          text: "1 занятие — 1 500₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_1500_msc_group_elf"
-              : "buy_1500_msc_group_ycg",
-        }).row();
-        kb.add({
-          text: "12 занятий — 14 400₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_14400_msc_group_elf"
-              : "buy_14400_msc_group_ycg",
-        }).row();
-        kb.add({ text: "Пополнить депозит (любая сумма)", callback_data: "deposit" });
+        // Новичок: пробное + новые цены + депозит
+        buttonSet =
+          studioType === "elf"
+            ? buttonsData.group.MSCELF_NEW_WITH_TRIAL
+            : buttonsData.group.MSCYCG_NEW_WITH_TRIAL;
       } else if (userInfo.oldPrices === true) {
         // Действующий клиент со старыми ценами
-        kb.add({
-          text: "1 занятие — 1 400₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_1400_msc_group_elf_old"
-              : "buy_1400_msc_group_ycg_old",
-        }).row();
-        kb.add({
-          text: "12 занятий — 13 200₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_13200_msc_group_elf_old"
-              : "buy_13200_msc_group_ycg_old",
-        });
+        buttonSet =
+          studioType === "elf"
+            ? buttonsData.group.MSCELF
+            : buttonsData.group.MSCYCG;
       } else {
         // Действующий клиент с новыми ценами
-        kb.add({
-          text: "1 занятие — 1 500₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_1500_msc_group_elf"
-              : "buy_1500_msc_group_ycg",
-        }).row();
-        kb.add({
-          text: "12 занятий — 14 400₽",
-          callback_data:
-            studioType === "elf"
-              ? "buy_14400_msc_group_elf"
-              : "buy_14400_msc_group_ycg",
-        }).row();
-        kb.add({ text: "Пополнить депозит (любая сумма)", callback_data: "deposit" });
+        buttonSet =
+          studioType === "elf"
+            ? buttonsData.group.MSCELF_NEW
+            : buttonsData.group.MSCYCG_NEW;
       }
+      (buttonSet || []).forEach((button) => kb.add(button).row());
       await ctx.reply("Выберите тариф:", { reply_markup: kb });
     } else {
       // Прочие города — используем существующую логику
