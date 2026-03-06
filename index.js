@@ -3757,7 +3757,8 @@ bot.on("message:text", async (ctx) => {
             studioType === "elf"
               ? "buy_14400_msc_group_elf"
               : "buy_14400_msc_group_ycg",
-        });
+        }).row();
+        kb.add({ text: "Пополнить депозит (любая сумма)", callback_data: "deposit" });
       }
       await ctx.reply("Выберите тариф:", { reply_markup: kb });
     } else {
