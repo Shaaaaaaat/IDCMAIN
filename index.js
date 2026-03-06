@@ -1068,8 +1068,8 @@ const buttonsData = {
         callback_data: "buy_5000_personal_mscycg",
       },
       {
-        text: "Сплит на троих (6 000₽) — действует 4 недели",
-        callback_data: "buy_6000_personal_mscycg",
+        text: "Сплит на троих (6 600₽) — действует 4 недели",
+        callback_data: "buy_6600_personal_msc_ycg",
       },
       {
         text: "Пополнить депозит (любая сумма)",
@@ -1090,8 +1090,8 @@ const buttonsData = {
         callback_data: "buy_5000_personal_mscelf",
       },
       {
-        text: "Сплит на троих (6 000₽) — действует 4 недели",
-        callback_data: "buy_6000_personal_mscelf",
+        text: "Сплит на троих (6 600₽) — действует 4 недели",
+        callback_data: "buy_6600_personal_msc_elf",
       },
       {
         text: "Пополнить депозит (любая сумма)",
@@ -1112,8 +1112,8 @@ const buttonsData = {
         callback_data: "buy_5000_personal_spbspi",
       },
       {
-        text: "Сплит на троих (6 000₽) — действует 4 недели",
-        callback_data: "buy_6000_personal_spbspi",
+        text: "Сплит на троих (6 600₽) — действует 4 недели",
+        callback_data: "buy_6600_personal_spb_spi",
       },
       {
         text: "Пополнить депозит (любая сумма)",
@@ -1134,8 +1134,8 @@ const buttonsData = {
         callback_data: "buy_5000_personal_spbrtc",
       },
       {
-        text: "Сплит на троих (6 000₽) — действует 4 недели",
-        callback_data: "buy_6000_personal_spbrtc",
+        text: "Сплит на троих (6 600₽) — действует 4 недели",
+        callback_data: "buy_6600_personal_spb_rtc",
       },
       {
         text: "Пополнить депозит (любая сумма)",
@@ -1156,8 +1156,8 @@ const buttonsData = {
         callback_data: "buy_5000_personal_spbhkc",
       },
       {
-        text: "Сплит на троих (6 000₽) — действует 4 недели",
-        callback_data: "buy_6000_personal_spbhkc",
+        text: "Сплит на троих (6 600₽) — действует 4 недели",
+        callback_data: "buy_6600_personal_spb_hkc",
       },
       {
         text: "Пополнить депозит (любая сумма)",
@@ -1656,7 +1656,7 @@ function buildRescheduleReplyText(apiData) {
 }
 
 // Функция для генерации клавиатуры на основе тега пользователя
-function generateKeyboard(tag) {
+function generateKeyboard(tag, oldPrices) {
   let keyboard = new InlineKeyboard();
 
   if (tag.includes("ds") && tag.includes("rub")) {
@@ -1674,15 +1674,20 @@ function generateKeyboard(tag) {
   } else if (tag === "SPB_group_HKC") {
     buttonsData.group.SPBHKC.forEach((button) => keyboard.add(button).row());
   } else if (tag === "MSC_personal_YCG") {
-    buttonsData.personal.MSCYCG.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.personal.MSCYCG : buttonsData.personal.MSCYCG_NEW;
+    set.forEach((button) => keyboard.add(button).row());
   } else if (tag === "MSC_personal_ELF") {
-    buttonsData.personal.MSCELF.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.personal.MSCELF : buttonsData.personal.MSCELF_NEW;
+    set.forEach((button) => keyboard.add(button).row());
   } else if (tag === "SPB_personal_SPI") {
-    buttonsData.personal.SPBSPI.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.personal.SPBSPI : buttonsData.personal.SPBSPI_NEW;
+    set.forEach((button) => keyboard.add(button).row());
   } else if (tag === "SPB_personal_RTC") {
-    buttonsData.personal.SPBRTC.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.personal.SPBRTC : buttonsData.personal.SPBRTC_NEW;
+    set.forEach((button) => keyboard.add(button).row());
   } else if (tag === "SPB_personal_HKC") {
-    buttonsData.personal.SPBHKC.forEach((button) => keyboard.add(button).row());
+    const set = oldPrices ? buttonsData.personal.SPBHKC : buttonsData.personal.SPBHKC_NEW;
+    set.forEach((button) => keyboard.add(button).row());
   } else {
     // Если тег не распознан, возвращаем null
     return null;
@@ -3131,9 +3136,9 @@ bot.on("callback_query:data", async (ctx) => {
       const userInfo = await getUserInfo(tgId);
       const session = await Session.findOne({ userId: tgId.toString() });
       if (userInfo) {
-        const { tag, currency } = userInfo;
+        const { tag, currency, oldPrices } = userInfo;
         console.log(tag);
-        const keyboard = generateKeyboard(tag);
+        const keyboard = generateKeyboard(tag, oldPrices);
         if (keyboard) {
           await ctx.reply(
             "Здорово, что ты с нами!\nВыбери подходящий тариф из списка ниже — после оплаты просто запишись на тренировку через Telegram-чат или напрямую у своего тренера 💬💕",
@@ -3366,8 +3371,9 @@ bot.on("message:text", async (ctx) => {
       }
     }
 
-    // Генерация клавиатуры для персональных тренировок на основе priceTag
-    const keyboard = generateKeyboard(priceTag);
+    // Генерация клавиатуры для персональных тренировок на основе priceTag и old_prices
+    const userInfoForKb = await getUserInfo(ctx.from.id);
+    const keyboard = generateKeyboard(priceTag, userInfoForKb?.oldPrices);
     await ctx.reply("Выберите подходящий тариф для оплаты:", {
       reply_markup: keyboard,
     });
