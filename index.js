@@ -15,6 +15,11 @@ console.log("Приложение запущено");
 // Создаем экземпляр бота
 const bot = new Bot(process.env.BOT_API_KEY); // Ваш API ключ от Telegram бота
 
+// Защита от падения процесса на единичной ошибке middleware
+bot.catch((err) => {
+  console.error("Unhandled bot error:", err);
+});
+
 // Подключаемся к MongoDB
 connectDB();
 
@@ -1164,6 +1169,76 @@ const buttonsData = {
         callback_data: "deposit",
       },
     ],
+    MSCYCG_NEW: [
+      {
+        text: "1 тренировка (1 чел.) — 4 900₽",
+        callback_data: "buy_4900_personal_msc_ycg",
+      },
+      {
+        text: "1 тренировка (2-3 чел.) — 6 600₽",
+        callback_data: "buy_6600_personal_msc_ycg",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    MSCELF_NEW: [
+      {
+        text: "1 тренировка (1 чел.) — 4 900₽",
+        callback_data: "buy_4900_personal_msc_elf",
+      },
+      {
+        text: "1 тренировка (2-3 чел.) — 6 600₽",
+        callback_data: "buy_6600_personal_msc_elf",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    SPBSPI_NEW: [
+      {
+        text: "1 тренировка (1 чел.) — 4 900₽",
+        callback_data: "buy_4900_personal_spb_spi",
+      },
+      {
+        text: "1 тренировка (2-3 чел.) — 6 600₽",
+        callback_data: "buy_6600_personal_spb_spi",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    SPBRTC_NEW: [
+      {
+        text: "1 тренировка (1 чел.) — 4 900₽",
+        callback_data: "buy_4900_personal_spb_rtc",
+      },
+      {
+        text: "1 тренировка (2-3 чел.) — 6 600₽",
+        callback_data: "buy_6600_personal_spb_rtc",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
+    SPBHKC_NEW: [
+      {
+        text: "1 тренировка (1 чел.) — 4 900₽",
+        callback_data: "buy_4900_personal_spb_hkc",
+      },
+      {
+        text: "1 тренировка (2-3 чел.) — 6 600₽",
+        callback_data: "buy_6600_personal_spb_hkc",
+      },
+      {
+        text: "Пополнить депозит (любая сумма)",
+        callback_data: "deposit",
+      },
+    ],
     YVNGFG: [
       {
         text: "1 занятие (12500դր.) — действует 4 недели",
@@ -1675,19 +1750,29 @@ function generateKeyboard(tag, oldPrices) {
     buttonsData.group.SPBHKC.forEach((button) => keyboard.add(button).row());
   } else if (tag === "MSC_personal_YCG") {
     const set = oldPrices ? buttonsData.personal.MSCYCG : buttonsData.personal.MSCYCG_NEW;
-    set.forEach((button) => keyboard.add(button).row());
+    (set || buttonsData.personal.MSCYCG || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else if (tag === "MSC_personal_ELF") {
     const set = oldPrices ? buttonsData.personal.MSCELF : buttonsData.personal.MSCELF_NEW;
-    set.forEach((button) => keyboard.add(button).row());
+    (set || buttonsData.personal.MSCELF || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else if (tag === "SPB_personal_SPI") {
     const set = oldPrices ? buttonsData.personal.SPBSPI : buttonsData.personal.SPBSPI_NEW;
-    set.forEach((button) => keyboard.add(button).row());
+    (set || buttonsData.personal.SPBSPI || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else if (tag === "SPB_personal_RTC") {
     const set = oldPrices ? buttonsData.personal.SPBRTC : buttonsData.personal.SPBRTC_NEW;
-    set.forEach((button) => keyboard.add(button).row());
+    (set || buttonsData.personal.SPBRTC || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else if (tag === "SPB_personal_HKC") {
     const set = oldPrices ? buttonsData.personal.SPBHKC : buttonsData.personal.SPBHKC_NEW;
-    set.forEach((button) => keyboard.add(button).row());
+    (set || buttonsData.personal.SPBHKC || []).forEach((button) =>
+      keyboard.add(button).row()
+    );
   } else {
     // Если тег не распознан, возвращаем null
     return null;
