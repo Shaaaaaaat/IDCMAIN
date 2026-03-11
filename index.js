@@ -2560,6 +2560,24 @@ bot.on("callback_query:data", async (ctx) => {
   const action = ctx.callbackQuery.data;
   const session = await Session.findOne({ userId: ctx.from.id.toString() });
 
+  if (action === "lesson_1") {
+    const webhookUrl = "https://4krm0nu4egm1dhq3laivcxbf3ieipynf@hook.eu1.make.com";
+    try {
+      await axios.post(webhookUrl, { tg_id: ctx.from.id });
+      await ctx.answerCallbackQuery({ text: "Отправлено" });
+    } catch (error) {
+      console.error(
+        "[lesson_1] webhook error:",
+        error?.response?.data || error?.message || error
+      );
+      await ctx.answerCallbackQuery({
+        text: "Не удалось отправить данные",
+        show_alert: true,
+      });
+    }
+    return;
+  }
+
   if (action.startsWith("resched_pick_")) {
     const pickedIndex = Number(action.replace("resched_pick_", ""));
     const slots = Array.isArray(session?.userState?.rescheduleSlots)
