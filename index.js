@@ -2561,7 +2561,7 @@ bot.on("callback_query:data", async (ctx) => {
   const session = await Session.findOne({ userId: ctx.from.id.toString() });
 
   if (action === "lesson_1") {
-    const webhookUrl = "https://4krm0nu4egm1dhq3laivcxbf3ieipynf@hook.eu1.make.com";
+    const webhookUrl = "https://hook.eu1.make.com/7xenv6os9ctuobzp79gdyg1na6n7xs82";
     try {
       await axios.post(webhookUrl, { tg_id: ctx.from.id });
       await ctx.answerCallbackQuery({ text: "Отправлено" });
