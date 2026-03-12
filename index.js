@@ -2578,6 +2578,24 @@ bot.on("callback_query:data", async (ctx) => {
     return;
   }
 
+  if (action === "exercises_1") {
+    const webhookUrl = "https://hook.eu1.make.com/7ef44ign27ukjw9lo2renkj4b3grfsnv";
+    try {
+      await axios.post(webhookUrl, { tg_id: ctx.from.id });
+      await ctx.answerCallbackQuery({ text: "Отправлено" });
+    } catch (error) {
+      console.error(
+        "[exercises_1] webhook error:",
+        error?.response?.data || error?.message || error
+      );
+      await ctx.answerCallbackQuery({
+        text: "Не удалось отправить данные",
+        show_alert: true,
+      });
+    }
+    return;
+  }
+
   if (action.startsWith("resched_pick_")) {
     const pickedIndex = Number(action.replace("resched_pick_", ""));
     const slots = Array.isArray(session?.userState?.rescheduleSlots)
