@@ -1494,7 +1494,9 @@ async function getUserInfo(tgId) {
       const fields = records[0].fields || {};
       const email = fields.email || "нет email";
       const finalDay = fields.Final_day;
-      const tag = fields.Tag || "неизвестен";
+      const tagRaw = String(fields.Tag || "неизвестен");
+      // split-теги обслуживаем той же логикой, что personal
+      const tag = tagRaw.replace(/split/gi, "personal");
       const studioRaw =
         fields.studio_id ?? fields.studioId ?? fields.Studio_ID ?? "";
       const studioId = Array.isArray(studioRaw)
@@ -2586,6 +2588,24 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         "[exercises_1] webhook error:",
+        error?.response?.data || error?.message || error
+      );
+      await ctx.answerCallbackQuery({
+        text: "Не удалось отправить данные",
+        show_alert: true,
+      });
+    }
+    return;
+  }
+
+  if (action === "about_course") {
+    const webhookUrl = "https://hook.eu1.make.com/gccpl8pf0llxljstqbn8hveyzwuxyy4m";
+    try {
+      await axios.post(webhookUrl, { tg_id: ctx.from.id });
+      await ctx.answerCallbackQuery({ text: "Отправлено" });
+    } catch (error) {
+      console.error(
+        "[about_course] webhook error:",
         error?.response?.data || error?.message || error
       );
       await ctx.answerCallbackQuery({
