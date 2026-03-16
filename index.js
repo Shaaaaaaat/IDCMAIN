@@ -1590,6 +1590,19 @@ function resolveFirstBookingStudioIdBySessionStudio(studioRaw) {
   return null;
 }
 
+function resolveOfflineStudioIdForPurchase(studioRaw, tagRaw) {
+  const byStudio = resolveFirstBookingStudioIdBySessionStudio(studioRaw);
+  if (byStudio) return byStudio;
+
+  const tag = String(tagRaw || "").toUpperCase();
+  if (!tag) return null;
+  if (tag.includes("MSC") && tag.includes("YCG")) return "msk_youcan";
+  if (tag.includes("MSC") && tag.includes("ELF")) return "msk_elfit";
+  if (tag.includes("SPB") && tag.includes("SPI")) return "spb_spirit";
+  if (tag.includes("SPB") && tag.includes("HKC")) return "spb_hkc";
+  return null;
+}
+
 async function fetchScheduleByStudioId(studioId) {
   const url = "https://calisthenics.ru/api/schedule";
   try {
@@ -2107,6 +2120,8 @@ async function sendTwoToAirtable(
   };
   if (meta.email) fields.email = meta.email;
   if (meta.fullName) fields.FIO = meta.fullName;
+  const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
+  if (studioId) fields.studio_id = studioId;
 
   const data = {
     fields,
@@ -2341,6 +2356,8 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   if (meta.email) fields.email = meta.email;
   if (meta.fullName) fields.FIO = meta.fullName;
   if (meta.nickname) fields.Nickname = meta.nickname;
+  const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
+  if (studioId) fields.studio_id = studioId;
 
   const data = {
     fields,
@@ -2941,6 +2958,7 @@ bot.on("callback_query:data", async (ctx) => {
       ctx.from.username,
       {
         email: session?.email,
+        studio: session?.studio,
         fullName:
           session?.name ||
           [ctx.from?.first_name, ctx.from?.last_name]
@@ -3384,13 +3402,18 @@ bot.on("callback_query:data", async (ctx) => {
       promptParts.push("📅 Выберите дату и время пробной тренировки:");
       await ctx.reply(promptParts.join("\n\n"), { reply_markup: slotsKeyboard });
     } else if (action === "personal_training") {
-      console.log("Выбрал персональные тренировки, отправляю сообщение");
-      // Персональная тренировка - показываем персональное меню
+      console.log("Выбрал персональную/сплит для первой записи, направляю на сайт");
       await ctx.reply(
-        "Напишите, пожалуйста, в какой день и время вам удобно тренироваться (лучше указать диапазон) и сколько человек будет  — я согласую занятие с тренером и вернусь к вам как можно скорее."
+        "Для оплаты персональной или сплит тренировки перейдите, пожалуйста, на сайт:",
+        {
+          reply_markup: new InlineKeyboard().add({
+            text: "Перейти на сайт",
+            url: "https://calisthenics.ru/#locations",
+          }),
+        }
       );
-
-      session.step = "awaiting_personal_training_details";
+      session.userState = {};
+      session.step = "completed";
       await session.save();
     }
   } else if (session.step === "awaiting_card_type") {
@@ -3505,7 +3528,10 @@ bot.on("callback_query:data", async (ctx) => {
           paymentId,
           actionInfo.sum,
           actionInfo.lessons,
-          actionInfo.tag
+          actionInfo.tag,
+          {
+            studio: actionInfo?.studio || session?.studio,
+          }
         );
       }
       session.userState = {};
@@ -3553,6 +3579,7 @@ bot.on("callback_query:data", async (ctx) => {
       ctx.from.username,
       {
         email: session?.email,
+        studio: session?.studio,
         fullName:
           session?.name ||
           [ctx.from?.first_name, ctx.from?.last_name]
@@ -3680,6 +3707,7 @@ bot.on("callback_query:data", async (ctx) => {
             email,
             fullName,
             nickname: ctx.from?.username || "",
+            studio: actionInfo?.studio || session?.studio,
           }
         );
       }
