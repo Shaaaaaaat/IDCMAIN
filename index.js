@@ -1287,13 +1287,13 @@ const buttonsData = {
 
 const studioDetails = {
   "м. 1905г.": {
-    price: 950,
+    price: 1100,
     currency: "RUB",
     tag: "01MSC_group_YCG_start",
     paymentSystem: "robokassa", // Использовать Robokassa для России
   },
   "м. Октябрьская": {
-    price: 950,
+    price: 1100,
     currency: "RUB",
     tag: "01MSC_group_ELF_start",
     paymentSystem: "robokassa", // Использовать Robokassa для России
@@ -1305,13 +1305,13 @@ const studioDetails = {
     paymentSystem: "robokassa", // Использовать Robokassa для России
   },
   "м. Выборгская": {
-    price: 1400,
+    price: 1100,
     currency: "RUB",
     tag: "01SPB_group_HKC_start",
     paymentSystem: "robokassa",
   },
   "м. Московские Ворота": {
-    price: 1400,
+    price: 1100,
     currency: "RUB",
     tag: "01SPB_group_SPI_start",
     paymentSystem: "robokassa",
