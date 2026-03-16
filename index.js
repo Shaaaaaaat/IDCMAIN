@@ -2085,7 +2085,6 @@ async function sendTwoToAirtable(
     Tag: tag,
     Date: date || formatPurchaseDateTime(new Date()),
     Nickname: nick,
-    Currency: "RUB",
     Status: "created",
   };
   if (meta.email) fields.email = meta.email;
@@ -2319,7 +2318,6 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
     Lessons: lessons,
     Tag: tag,
     Date: formatPurchaseDateTime(new Date()),
-    Currency: "RUB",
     Status: "created",
   };
   if (meta.email) fields.email = meta.email;
