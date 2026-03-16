@@ -1580,6 +1580,16 @@ function resolveRescheduleStudioId(userInfo) {
   return mapTagToStudioId(userInfo?.tag);
 }
 
+function resolveFirstBookingStudioIdBySessionStudio(studioRaw) {
+  const studio = String(studioRaw || "").toLowerCase();
+  if (!studio) return null;
+  if (studio.includes("1905")) return "msk_youcan";
+  if (studio.includes("октябр")) return "msk_elfit";
+  if (studio.includes("выборг")) return "spb_hkc";
+  if (studio.includes("московские ворота")) return "spb_spirit";
+  return null;
+}
+
 async function fetchScheduleByStudioId(studioId) {
   const url = "https://calisthenics.ru/api/schedule";
   try {
@@ -1992,6 +2002,14 @@ function mapPurchaseTitleByTag(tag) {
   return String(tag || "покупка");
 }
 
+function normalizePurchaseTagForAirtable(tag) {
+  const raw = String(tag || "").trim();
+  if (!raw) return raw;
+  // Для офлайн-залов убираем технический префикс "01" и суффикс "_start"
+  // Пример: 01MSC_group_YCG_start -> MSC_group_YCG
+  return raw.replace(/^\d+/, "").replace(/_start$/i, "");
+}
+
 function formatMoneyValue(value, currency) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "—";
@@ -2082,7 +2100,7 @@ async function sendTwoToAirtable(
     inv_id: invId,
     Sum: sum,
     Lessons: lessons,
-    Tag: tag,
+    Tag: normalizePurchaseTagForAirtable(tag),
     Date: date || formatPurchaseDateTime(new Date()),
     Nickname: nick,
     Status: "created",
@@ -2316,7 +2334,7 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
     inv_id: invId,
     Sum: sum,
     Lessons: lessons,
-    Tag: tag,
+    Tag: normalizePurchaseTagForAirtable(tag),
     Date: formatPurchaseDateTime(new Date()),
     Status: "created",
   };
@@ -2883,6 +2901,65 @@ bot.on("callback_query:data", async (ctx) => {
     return;
   }
 
+  if (action.startsWith("first_pick_")) {
+    const pickedIndex = Number(action.replace("first_pick_", ""));
+    const slots = Array.isArray(session?.userState?.firstBookingSlots)
+      ? session.userState.firstBookingSlots
+      : [];
+    const picked = Number.isInteger(pickedIndex) ? slots[pickedIndex] : null;
+
+    if (!picked || !picked.ddmm || !picked.hhmm || !picked.human) {
+      await ctx.answerCallbackQuery({
+        text: "Список слотов устарел. Нажмите «Записаться на тренировку» ещё раз.",
+        show_alert: true,
+      });
+      return;
+    }
+
+    await ctx.answerCallbackQuery({ text: "Слот выбран" });
+
+    const { paymentLink, paymentId } = await generatePaymentLinkFirst(
+      session.studio,
+      session.email
+    );
+    const dateTime = `${picked.ddmm} ${picked.hhmm}`;
+
+    await ctx.reply(
+      `Отлично! Вы выбрали: ${picked.human}. Для подтверждения записи оплатите, пожалуйста, тренировку по ссылке ниже. После оплаты вы получите сообщение с подтверждением записи.`
+    );
+    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
+
+    const sum = studioDetails[session.studio]?.price;
+    const tag = studioDetails[session.studio]?.tag;
+    await sendTwoToAirtable(
+      ctx.from.id,
+      paymentId,
+      sum,
+      1,
+      tag,
+      dateTime,
+      ctx.from.username,
+      {
+        email: session?.email,
+        fullName:
+          session?.name ||
+          [ctx.from?.first_name, ctx.from?.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim(),
+      }
+    );
+
+    session.userState = {
+      ...(session.userState || {}),
+      firstBookingSlots: [],
+      firstBookingStudioId: "",
+    };
+    session.step = "completed";
+    await session.save();
+    return;
+  }
+
   if (
     action === "city_moscow" ||
     action === "city_spb"
@@ -3252,17 +3329,60 @@ bot.on("callback_query:data", async (ctx) => {
     }
   } else if (session.step === "awaiting_training_type") {
     if (action === "group_training") {
-      console.log("Выбрал групповые тренировки, отправляю расписание");
-      // Получаем данные студии из сессии и telegram_id
-      const studio = session.studio; // Берем студию из сессии
-      const telegramId = ctx.from.id; // ID пользователя Telegram
+      console.log("Выбрал групповые тренировки, загружаю расписание с API сайта");
+      const studioId = resolveFirstBookingStudioIdBySessionStudio(session?.studio);
+      if (!studioId) {
+        await ctx.reply(
+          "Не удалось определить студию для расписания. Напишите нашему менеджеру Никите @IDC_manager."
+        );
+        return;
+      }
 
-      // Отправляем данные на вебхук
-      await sendToWebhook(studio, telegramId);
+      const scheduleResp = await fetchScheduleByStudioId(studioId);
+      if (!scheduleResp.ok) {
+        await ctx.reply(
+          "Сейчас не удалось загрузить расписание. Попробуйте чуть позже или напишите нашему менеджеру Никите @IDC_manager."
+        );
+        return;
+      }
 
-      // Сохраняем шаг, если нужно
-      session.step = "awaiting_next_step";
+      const { notices, slots } = buildRescheduleSlotsData(scheduleResp.data);
+      if (!slots.length) {
+        const parts = [];
+        if (notices.length) parts.push(notices.join("\n"));
+        parts.push(RESCHEDULE_NO_SLOTS_TEXT);
+        await ctx.reply(parts.join("\n\n"));
+        return;
+      }
+
+      const maxButtons = 30;
+      const selectableSlots = slots.slice(0, maxButtons);
+      const slotsKeyboard = new InlineKeyboard();
+      selectableSlots.forEach((slot, idx) => {
+        slotsKeyboard
+          .add({
+            text: `${slot.weekdayShort} ${slot.ddmm} в ${slot.hhmm}`,
+            callback_data: `first_pick_${idx}`,
+          })
+          .row();
+      });
+
+      session.userState = {
+        ...(session.userState || {}),
+        firstBookingStudioId: studioId,
+        firstBookingSlots: selectableSlots.map((slot) => ({
+          ddmm: slot.ddmm,
+          hhmm: slot.hhmm,
+          human: slot.human,
+        })),
+      };
+      session.step = "awaiting_first_booking_slot";
       await session.save();
+
+      const promptParts = [];
+      if (notices.length) promptParts.push(notices.join("\n"));
+      promptParts.push("📅 Выберите дату и время пробной тренировки:");
+      await ctx.reply(promptParts.join("\n\n"), { reply_markup: slotsKeyboard });
     } else if (action === "personal_training") {
       console.log("Выбрал персональные тренировки, отправляю сообщение");
       // Персональная тренировка - показываем персональное меню
