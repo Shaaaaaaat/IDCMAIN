@@ -1965,28 +1965,134 @@ async function sendToAirtable(name, email, phone, tgId, city, studio) {
   }
 }
 
-// Функция для отправки данных в Airtable 2
-async function sendTwoToAirtable(tgId, invId, sum, lessons, tag, date, nick) {
+function getAirtablePurchasesTableId() {
+  const tableId = process.env.AIRTABLE_PURCHASES;
+  if (!tableId) {
+    throw new Error("AIRTABLE_PURCHASES is not configured");
+  }
+  return tableId;
+}
+
+function formatPurchaseDateTime(dateInput = new Date()) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+function mapPurchaseTitleByTag(tag) {
+  const tagValue = String(tag || "").toLowerCase();
+  if (tagValue.includes("classic")) return "Calisthenics Classic";
+  if (tagValue.includes("light")) return "Calisthenics Light";
+  if (tagValue.includes("pullups")) return "Pullups For Ladies";
+  if (tagValue.includes("handstand")) return "Handstand";
+  if (tagValue.includes("deposit")) return "Пополнение депозита";
+  return String(tag || "покупка");
+}
+
+function formatMoneyValue(value, currency) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  const normalizedCurrency = String(currency || "RUB").toUpperCase();
+  if (normalizedCurrency === "RUB") {
+    return `${Math.round(num)} ₽`;
+  }
+  return `${num} ${normalizedCurrency}`;
+}
+
+function buildPurchasePaidMessage(fields) {
+  const sum = Number(fields.Sum);
+  const lessons = Number(fields.Lessons);
+  const perLesson = Number.isFinite(sum) && Number.isFinite(lessons) && lessons > 0
+    ? sum / lessons
+    : null;
+  const currency = String(fields.Currency || "RUB").toUpperCase();
+  return [
+    `Новая покупка ${mapPurchaseTitleByTag(fields.Tag)}:`,
+    `Дата: ${formatPurchaseDateTime(fields.Date || new Date())}`,
+    `Имя: ${fields.FIO || "—"}`,
+    `Сумма: ${formatMoneyValue(fields.Sum, currency)}`,
+    `Кол-во тренировок: ${Number.isFinite(lessons) ? lessons : "—"}`,
+    `Стоимость за тренировку: ${
+      perLesson === null ? "—" : formatMoneyValue(perLesson, currency)
+    }`,
+    `Тэг: ${fields.Tag || "—"}`,
+  ].join("\n");
+}
+
+async function getPurchaseRecordByInvId(invId) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
-  const buyId = process.env.AIRTABLE_BUY_ID;
+  const purchasesId = getAirtablePurchasesTableId();
+  const escapedInvId = String(invId).replace(/"/g, '""');
+  const asNumber = Number(invId);
+  const filterByFormula = Number.isFinite(asNumber)
+    ? `OR({inv_id}="${escapedInvId}",{inv_id}=${asNumber})`
+    : `{inv_id}="${escapedInvId}"`;
+  const url = `https://api.airtable.com/v0/${baseId}/${purchasesId}?filterByFormula=${encodeURIComponent(
+    filterByFormula
+  )}`;
+  const { data } = await axios.get(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  return data.records && data.records.length > 0 ? data.records[0] : null;
+}
 
-  const url = `https://api.airtable.com/v0/${baseId}/${buyId}`;
+async function patchPurchaseRecord(recordId, fields) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const purchasesId = getAirtablePurchasesTableId();
+  await axios.patch(
+    `https://api.airtable.com/v0/${baseId}/${purchasesId}/${recordId}`,
+    { fields },
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+
+// Функция для отправки данных в Airtable 2
+async function sendTwoToAirtable(
+  tgId,
+  invId,
+  sum,
+  lessons,
+  tag,
+  date,
+  nick,
+  meta = {}
+) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const purchasesId = getAirtablePurchasesTableId();
+
+  const url = `https://api.airtable.com/v0/${baseId}/${purchasesId}`;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
 
+  const fields = {
+    tgId: tgId,
+    inv_id: invId,
+    Sum: sum,
+    Lessons: lessons,
+    Tag: tag,
+    Date: date || formatPurchaseDateTime(new Date()),
+    Nickname: nick,
+    Currency: "RUB",
+    Status: "created",
+  };
+  if (meta.email) fields.email = meta.email;
+  if (meta.fullName) fields.FIO = meta.fullName;
+
   const data = {
-    fields: {
-      tgId: tgId,
-      inv_id: invId,
-      Sum: sum,
-      Lessons: lessons,
-      Tag: tag,
-      Date: date,
-      Nickname: nick,
-    },
+    fields,
   };
 
   try {
@@ -2195,25 +2301,33 @@ async function applyFreezeToAirtable(tgId, daysToAdd) {
 }
 
 // Функция для отправки данных в Airtable 2
-async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag) {
+async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
-  const buyId = process.env.AIRTABLE_BUY_ID;
+  const purchasesId = getAirtablePurchasesTableId();
 
-  const url = `https://api.airtable.com/v0/${baseId}/${buyId}`;
+  const url = `https://api.airtable.com/v0/${baseId}/${purchasesId}`;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
 
+  const fields = {
+    tgId: tgId,
+    inv_id: invId,
+    Sum: sum,
+    Lessons: lessons,
+    Tag: tag,
+    Date: formatPurchaseDateTime(new Date()),
+    Currency: "RUB",
+    Status: "created",
+  };
+  if (meta.email) fields.email = meta.email;
+  if (meta.fullName) fields.FIO = meta.fullName;
+  if (meta.nickname) fields.Nickname = meta.nickname;
+
   const data = {
-    fields: {
-      tgId: tgId,
-      inv_id: invId,
-      Sum: sum,
-      Lessons: lessons,
-      Tag: tag,
-    },
+    fields,
   };
 
   try {
@@ -2288,6 +2402,82 @@ app.post("/payments/ameria/check", async (req, res) => {
     const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (e.message || "Check failed");
     console.error("Ameria check error:", msg);
     return res.status(500).json({ ok: false, error: e.message || "Check failed" });
+  }
+});
+
+// --- Robokassa result callback ---
+app.post("/webhook/robokassa", async (req, res) => {
+  try {
+    const invId = String(req.body?.InvId ?? req.body?.inv_id ?? "").trim();
+    const outSum = String(req.body?.OutSum ?? req.body?.out_sum ?? "").trim();
+    const signatureValue = String(
+      req.body?.SignatureValue ?? req.body?.signature_value ?? ""
+    ).trim();
+
+    if (!invId || !outSum || !signatureValue) {
+      return res.status(400).send("Bad request");
+    }
+
+    const resultSecret = process.env.ROBO_SECRET2 || process.env.ROBO_SECRET;
+    if (!resultSecret) {
+      console.error("Robokassa callback error: ROBO_SECRET2/ROBO_SECRET is missing");
+      return res.status(500).send("Server error");
+    }
+
+    const expectedSignature = crypto
+      .createHash("md5")
+      .update(`${outSum}:${invId}:${resultSecret}`)
+      .digest("hex")
+      .toLowerCase();
+
+    if (signatureValue.toLowerCase() !== expectedSignature) {
+      console.warn("Robokassa callback error: invalid signature");
+      return res.status(400).send("Invalid signature");
+    }
+
+    const record = await getPurchaseRecordByInvId(invId);
+    if (!record) {
+      console.warn(`Robokassa callback: purchase not found for inv_id=${invId}`);
+      return res.status(200).send(`OK${invId}`);
+    }
+
+    await patchPurchaseRecord(record.id, { Status: "paid" });
+    const updatedRecord = await getPurchaseRecordByInvId(invId);
+    const fields = updatedRecord?.fields || { ...record.fields, Status: "paid" };
+    const notifyMessage = buildPurchasePaidMessage(fields);
+
+    try {
+      await bot.api.sendMessage(-4505387868, notifyMessage);
+    } catch (notifyErr) {
+      console.error(
+        "Robokassa callback notify error:",
+        notifyErr.response?.description || notifyErr.message
+      );
+    }
+
+    // Уведомление плательщику в личный чат бота об успешной оплате
+    const payerTgId = fields.tgId;
+    if (payerTgId) {
+      try {
+        await bot.api.sendMessage(
+          payerTgId,
+          "Оплата прошла успешно. Спасибо за покупку!"
+        );
+      } catch (payerErr) {
+        console.error(
+          "Robokassa callback payer notify error:",
+          payerErr.response?.description || payerErr.message
+        );
+      }
+    }
+
+    return res.status(200).send(`OK${invId}`);
+  } catch (e) {
+    console.error(
+      "Robokassa callback fatal error:",
+      e.response?.data || e.message
+    );
+    return res.status(500).send("Server error");
   }
 });
 
@@ -3242,7 +3432,16 @@ bot.on("callback_query:data", async (ctx) => {
       lessons,
       tag,
       str2,
-      ctx.from.username
+      ctx.from.username,
+      {
+        email: session?.email,
+        fullName:
+          session?.name ||
+          [ctx.from?.first_name, ctx.from?.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim(),
+      }
     );
   } else if (action.startsWith("testday")) {
     const buttonText = action.split(",")[1];
@@ -3358,7 +3557,12 @@ bot.on("callback_query:data", async (ctx) => {
           paymentId,
           actionInfo.sum,
           actionInfo.lessons,
-          actionInfo.tag
+          actionInfo.tag,
+          {
+            email,
+            fullName,
+            nickname: ctx.from?.username || "",
+          }
         );
       }
     } catch (err) {
@@ -3423,7 +3627,16 @@ bot.on("message:text", async (ctx) => {
       0,
       "deposit",
       "deposit",
-      ctx.from.username
+      ctx.from.username,
+      {
+        email: userInfo.email,
+        fullName:
+          session?.name ||
+          [ctx.from?.first_name, ctx.from?.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim(),
+      }
     );
 
     // // Сбрасываем состояние пользователя
