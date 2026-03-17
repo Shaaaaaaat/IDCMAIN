@@ -381,6 +381,7 @@ const actionData = {
     sum: 1100,
     lessons: 1,
     tag: "MSC_group_YCG",
+    tariffLabel: "trial",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "м. 1905г.",
@@ -406,6 +407,7 @@ const actionData = {
     sum: 1100,
     lessons: 1,
     tag: "MSC_group_ELF",
+    tariffLabel: "trial",
     currency: "RUB",
     paymentSystem: "robokassa",
     studio: "м. Октябрьская",
@@ -1624,20 +1626,55 @@ function isOnlinePurchaseContext(studioRaw, tagRaw) {
   return false;
 }
 
-function resolveFormatAndTariffLabelForPurchase(studioRaw, tagRaw, lessonsRaw) {
+function resolveFormatAndTariffLabelForPurchase(
+  studioRaw,
+  tagRaw,
+  lessonsRaw,
+  tariffLabelOverrideRaw
+) {
   const tag = String(tagRaw || "");
   if (tag.toLowerCase().includes("deposit")) return { format: null, tariffLabel: null };
 
   const lessons = Number(lessonsRaw);
   const isOffline = Boolean(resolveOfflineStudioIdForPurchase(studioRaw, tag));
   if (isOffline) {
-    const isTrial =
-      lessons === 1 &&
-      /_group_/i.test(tag) &&
-      !/_long|_short/i.test(tag);
+    const tariffLabelOverride = String(tariffLabelOverrideRaw || "").trim();
+    if (tariffLabelOverride) {
+      return { format: "gym", tariffLabel: tariffLabelOverride };
+    }
+
+    const normalizedTag = normalizePurchaseTagForAirtable(tag);
+    const isMoscow = /^MSC_/i.test(normalizedTag);
+    const isSpb = /^SPB_/i.test(normalizedTag);
+
+    if (lessons === 1) {
+      const isTrial = /_start$/i.test(tag);
+      return {
+        format: "gym",
+        tariffLabel: isTrial ? "trial" : "package_1_short",
+      };
+    }
+
+    if (lessons === 12) {
+      if (isMoscow) {
+        return {
+          format: "gym",
+          tariffLabel: "package_12_long",
+        };
+      }
+
+      if (isSpb) {
+        const isShortAccess = /_short$/i.test(normalizedTag);
+        return {
+          format: "gym",
+          tariffLabel: isShortAccess ? "package_12_short" : "package_12_long",
+        };
+      }
+    }
+
     return {
       format: "gym",
-      tariffLabel: isTrial ? "trial" : null,
+      tariffLabel: null,
     };
   }
 
@@ -2175,7 +2212,8 @@ async function sendTwoToAirtable(
   const { format, tariffLabel } = resolveFormatAndTariffLabelForPurchase(
     meta.studio,
     tag,
-    lessons
+    lessons,
+    meta.tariffLabel
   );
   if (format) fields.format = format;
   if (tariffLabel) fields.tariff_label = tariffLabel;
@@ -2419,7 +2457,8 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   const { format, tariffLabel } = resolveFormatAndTariffLabelForPurchase(
     meta.studio,
     tag,
-    lessons
+    lessons,
+    meta.tariffLabel
   );
   if (format) fields.format = format;
   if (tariffLabel) fields.tariff_label = tariffLabel;
@@ -3597,6 +3636,7 @@ bot.on("callback_query:data", async (ctx) => {
           actionInfo.tag,
           {
             studio: actionInfo?.studio || session?.studio,
+            tariffLabel: actionInfo?.tariffLabel,
           }
         );
       }
@@ -3774,6 +3814,7 @@ bot.on("callback_query:data", async (ctx) => {
             fullName,
             nickname: ctx.from?.username || "",
             studio: actionInfo?.studio || session?.studio,
+            tariffLabel: actionInfo?.tariffLabel,
           }
         );
       }
