@@ -2964,6 +2964,27 @@ bot.on("callback_query:data", async (ctx) => {
     return;
   }
 
+  if (action === "yes_interesting") {
+    const webhookUrl = "https://hook.eu1.make.com/tg8fh9rerez051exk1f2egexbfh3x9o9";
+    try {
+      await axios.post(webhookUrl, {
+        tg_id: ctx.from.id,
+        username: ctx.from.username || "",
+      });
+      await ctx.answerCallbackQuery({ text: "Отправлено" });
+    } catch (error) {
+      console.error(
+        "[yes_interesting] webhook error:",
+        error?.response?.data || error?.message || error
+      );
+      await ctx.answerCallbackQuery({
+        text: "Не удалось отправить данные",
+        show_alert: true,
+      });
+    }
+    return;
+  }
+
   if (action.startsWith("resched_pick_")) {
     const pickedIndex = Number(action.replace("resched_pick_", ""));
     const slots = Array.isArray(session?.userState?.rescheduleSlots)
