@@ -2179,6 +2179,7 @@ async function sendTwoToAirtable(
   );
   if (format) fields.format = format;
   if (tariffLabel) fields.tariff_label = tariffLabel;
+  fields.Currency = "RUB";
 
   const data = {
     fields,
@@ -2422,6 +2423,7 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   );
   if (format) fields.format = format;
   if (tariffLabel) fields.tariff_label = tariffLabel;
+  fields.Currency = "RUB";
 
   const data = {
     fields,
