@@ -1603,6 +1603,56 @@ function resolveOfflineStudioIdForPurchase(studioRaw, tagRaw) {
   return null;
 }
 
+function isOnlinePurchaseContext(studioRaw, tagRaw) {
+  const studio = String(studioRaw || "").toLowerCase();
+  const tag = String(tagRaw || "").toLowerCase();
+  if (
+    studio.includes("calisthenics_") ||
+    studio.includes("pullups_for_ladies") ||
+    studio.includes("handstand")
+  ) {
+    return true;
+  }
+  if (
+    tag.startsWith("ds_") ||
+    tag === "ds_rub" ||
+    tag === "ds_eur" ||
+    tag === "ds_usd"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function resolveFormatAndTariffLabelForPurchase(studioRaw, tagRaw, lessonsRaw) {
+  const tag = String(tagRaw || "");
+  if (tag.toLowerCase().includes("deposit")) return { format: null, tariffLabel: null };
+
+  const lessons = Number(lessonsRaw);
+  const isOffline = Boolean(resolveOfflineStudioIdForPurchase(studioRaw, tag));
+  if (isOffline) {
+    const isTrial =
+      lessons === 1 &&
+      /_group_/i.test(tag) &&
+      !/_long|_short/i.test(tag);
+    return {
+      format: "gym",
+      tariffLabel: isTrial ? "trial" : null,
+    };
+  }
+
+  const isOnline = isOnlinePurchaseContext(studioRaw, tag);
+  if (isOnline) {
+    const isOnlineTest = lessons === 1;
+    return {
+      format: "ds",
+      tariffLabel: isOnlineTest ? "online_test" : null,
+    };
+  }
+
+  return { format: null, tariffLabel: null };
+}
+
 async function fetchScheduleByStudioId(studioId) {
   const url = "https://calisthenics.ru/api/schedule";
   try {
@@ -2122,6 +2172,13 @@ async function sendTwoToAirtable(
   if (meta.fullName) fields.FIO = meta.fullName;
   const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
   if (studioId) fields.studio_id = studioId;
+  const { format, tariffLabel } = resolveFormatAndTariffLabelForPurchase(
+    meta.studio,
+    tag,
+    lessons
+  );
+  if (format) fields.format = format;
+  if (tariffLabel) fields.tariff_label = tariffLabel;
 
   const data = {
     fields,
@@ -2358,6 +2415,13 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   if (meta.nickname) fields.Nickname = meta.nickname;
   const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
   if (studioId) fields.studio_id = studioId;
+  const { format, tariffLabel } = resolveFormatAndTariffLabelForPurchase(
+    meta.studio,
+    tag,
+    lessons
+  );
+  if (format) fields.format = format;
+  if (tariffLabel) fields.tariff_label = tariffLabel;
 
   const data = {
     fields,
