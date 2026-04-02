@@ -3896,6 +3896,68 @@ bot.on("message:text", async (ctx) => {
     await session.save();
   }
 
+  // Тест генерации Ameria-ссылок только для одного аккаунта
+  if (tgId === 53928252 && userMessage === "/ameria_test") {
+    const userInfo = await getUserInfo(tgId);
+    const email = String(session?.email || userInfo?.email || "").trim();
+    const fullName =
+      session?.name ||
+      [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ").trim() ||
+      "Test User";
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      await ctx.reply("Не найден корректный email для генерации Ameria-ссылок.");
+      return;
+    }
+
+    try {
+      const [pay2, pay3] = await Promise.all([
+        initAmeriaPayment({
+          tgId,
+          amount: 2,
+          currency: "EUR",
+          email,
+          fullName,
+          tariffId: "ameria_test_2_eur",
+          tariffLabel: "Ameria test 2 EUR",
+          lessons: 1,
+          tag: "ameria_test",
+          courseName: "Ameria test",
+          locale: "ru",
+        }),
+        initAmeriaPayment({
+          tgId,
+          amount: 3,
+          currency: "EUR",
+          email,
+          fullName,
+          tariffId: "ameria_test_3_eur",
+          tariffLabel: "Ameria test 3 EUR",
+          lessons: 1,
+          tag: "ameria_test",
+          courseName: "Ameria test",
+          locale: "ru",
+        }),
+      ]);
+
+      const kb = new InlineKeyboard()
+        .url("Оплатить 2 EUR", pay2.paymentUrl)
+        .row()
+        .url("Оплатить 3 EUR", pay3.paymentUrl);
+
+      await ctx.reply("Тестовые ссылки Ameria (только для проверки):", {
+        reply_markup: kb,
+      });
+    } catch (error) {
+      console.error(
+        "[ameria_test] init error:",
+        error?.response?.data || error?.message || error
+      );
+      await ctx.reply("Не удалось сгенерировать Ameria-ссылки. Проверьте AMERIA_* env.");
+    }
+    return;
+  }
+
   if (session.userState?.awaitingDeposit === true) {
     const text = ctx.message.text.trim().toLowerCase();
     const sum = parseFloat(text);
