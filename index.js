@@ -34,17 +34,67 @@ function generateUniqueId() {
   return crypto.randomInt(1, 2147483647);
 }
 
+function formatOutSum(sum) {
+  const value = Number(sum);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("Некорректная сумма для Robokassa");
+  }
+  return value.toFixed(2);
+}
+
+function sanitizeReceiptItemName(input) {
+  const fallback = "Тренировка по калистенике";
+  const raw = String(input || "");
+  const normalized = raw
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/[<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const safe = normalized || fallback;
+  return safe.slice(0, 128);
+}
+
+function resolveReceiptServiceName(meta = {}) {
+  return sanitizeReceiptItemName(
+    meta.tariffLabel ||
+      meta.courseName ||
+      meta.studioName ||
+      "Тренировка по калистенике"
+  );
+}
+
+function buildRobokassaReceipt(outSumFormatted, serviceName) {
+  return {
+    sno: "patent",
+    items: [
+      {
+        name: serviceName,
+        quantity: 1,
+        sum: Number(outSumFormatted),
+        tax: "none",
+        payment_method: "full_prepayment",
+        payment_object: "service",
+      },
+    ],
+  };
+}
+
 // Функция для генерации ссылки на оплату
-function generatePaymentLink(paymentId, sum, email) {
+function generatePaymentLink(paymentId, sum, email, meta = {}) {
   const shopId = process.env.ROBO_ID; // Логин вашего магазина в Робокассе
   const secretKey1 = process.env.ROBO_SECRET1; // Secret Key 1 для формирования подписи
+  const outSum = formatOutSum(sum);
+  const serviceName = resolveReceiptServiceName(meta);
+  const receipt = buildRobokassaReceipt(outSum, serviceName);
+  const receiptRawJson = JSON.stringify(receipt);
+  const receiptEncoded = encodeURIComponent(receiptRawJson);
 
   const signature = crypto
     .createHash("md5")
-    .update(`${shopId}:${sum}:${paymentId}:${secretKey1}`)
+    .update(`${shopId}:${outSum}:${paymentId}:${receiptRawJson}:${secretKey1}`)
     .digest("hex");
 
-  return `https://auth.robokassa.ru/Merchant/Index.aspx?MerchantLogin=${shopId}&OutSum=${sum}&InvId=${paymentId}&SignatureValue=${signature}&Email=${encodeURIComponent(
+  return `https://auth.robokassa.ru/Merchant/Index.aspx?MerchantLogin=${shopId}&OutSum=${outSum}&InvId=${paymentId}&Receipt=${receiptEncoded}&SignatureValue=${signature}&Email=${encodeURIComponent(
     email
   )}&IsTest=0`; // Используйте https://auth.robokassa.ru/ для продакшена
 }
@@ -75,7 +125,9 @@ async function generatePaymentLinkFirst(studio, email) {
 
   if (studioInfo.paymentSystem === "robokassa") {
     // Генерация ссылки для Robokassa
-    const paymentLink = generatePaymentLink(paymentId, sum, e);
+    const paymentLink = generatePaymentLink(paymentId, sum, e, {
+      studioName: studio,
+    });
     return { paymentLink, paymentId };
   } else if (studioInfo.paymentSystem === "stripeAMD") {
     // Генерация ссылки для Stripe
@@ -293,7 +345,11 @@ async function generateSecondPaymentLink(buy, email, tgId, fullName) {
 
   if (actionInfo.paymentSystem === "robokassa") {
     // Генерация ссылки для Robokassa
-    const paymentLink = generatePaymentLink(paymentId, sum, e);
+    const paymentLink = generatePaymentLink(paymentId, sum, e, {
+      tariffLabel: actionInfo.tariffLabel,
+      courseName: actionInfo.courseName,
+      studioName: actionInfo.studio || studio,
+    });
     return { paymentLink, paymentId };
   } else if (actionInfo.paymentSystem === "stripeAMD") {
     // Генерация ссылки для Stripe
@@ -3973,7 +4029,9 @@ bot.on("message:text", async (ctx) => {
     }
     const tag = userInfo?.tag || "Отсутствует";
     const paymentId = generateUniqueId();
-    const paymentLink = generatePaymentLink(paymentId, sum, userInfo.email);
+    const paymentLink = generatePaymentLink(paymentId, sum, userInfo.email, {
+      courseName: "Deposit",
+    });
     await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
 
     // Отправляем данные о депозите в Airtable
