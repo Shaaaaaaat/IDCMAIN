@@ -8,6 +8,11 @@ const fs = require("fs");
 const axios = require("axios");
 const connectDB = require("./database");
 const Session = require("./sessionModel");
+const {
+  upsertPurchaseCreated,
+  markPurchasePaidAndProcess,
+  matchPurchaseByTgTokenShadow,
+} = require("./lib/supabase/purchases");
 
 // Логируем запуск приложения с информацией о пользователе
 console.log("Приложение запущено");
@@ -246,6 +251,34 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
     { fields },
     { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
   );
+  const resolvedMeta = resolveFormatAndTariffLabelForPurchase(
+    courseName,
+    tag,
+    lessons,
+    tariffLabel
+  );
+  await upsertPurchaseCreated({
+    sourceChannel: "telegram_bot",
+    email,
+    fi: fullName,
+    tgid: tgId,
+    createdTime: new Date().toISOString(),
+    purchaseSum: numAmount,
+    currency,
+    lessons,
+    pricePerLesson:
+      Number.isFinite(Number(lessons)) && Number(lessons) > 0
+        ? Number(numAmount) / Number(lessons)
+        : null,
+    idPayment: paymentId,
+    status: "Created",
+    courseName,
+    tag,
+    locale: loc,
+    tariffLabel: tariffLabel || resolvedMeta.tariffLabel || null,
+    studioSlug: courseName || null,
+    format: resolvedMeta.format || null,
+  });
   return { paymentUrl, paymentId, orderId };
 }
 async function checkAmeriaPayment(paymentId) {
@@ -282,6 +315,7 @@ async function checkAmeriaPayment(paymentId) {
       }
       tgId = fields.tgId ? String(fields.tgId) : null;
     }
+    await markPurchasePaidAndProcess(paymentId);
   }
   return {
     ok: true,
@@ -2140,6 +2174,7 @@ async function sendToAirtable(name, email, phone, tgId, city, studio) {
       error.response ? error.response.data : error.message
     );
   }
+
 }
 
 function getAirtablePurchasesTableId() {
@@ -2298,6 +2333,35 @@ async function sendTwoToAirtable(
       error.response ? error.response.data : error.message
     );
   }
+
+  await upsertPurchaseCreated({
+    sourceChannel: "telegram_bot",
+    email: meta.email || null,
+    fi: meta.fullName || null,
+    tgid: tgId,
+    createdTime: new Date().toISOString(),
+    purchaseSum: sum,
+    currency: meta.currency || "RUB",
+    lessons,
+    pricePerLesson:
+      Number.isFinite(Number(lessons)) && Number(lessons) > 0
+        ? Number(sum) / Number(lessons)
+        : null,
+    idPayment: invId,
+    status: "Created",
+    courseName: meta.courseName || meta.studio || null,
+    tag: normalizePurchaseTagForAirtable(tag),
+    nickname: nick || null,
+    phone: meta.phone || null,
+    locale: meta.locale || "ru",
+    tariffLabel: tariffLabel || null,
+    studioSlug: meta.studio || studioId || null,
+    slotStartAt: meta.slotStartAt || null,
+    format: format || null,
+    giftRecipient: meta.giftRecipient || null,
+    tgLinkToken: meta.tgLinkToken || null,
+  });
+
 }
 
 // Функция для обновления данных в Airtable - clients
@@ -2367,6 +2431,7 @@ async function sendDateToAirtable(tgId, date) {
       error.response ? error.response.data : error.message
     );
   }
+
 }
 
 // Функция для обновления данных в Airtable - clients БЕЗ отправки сообщения в ТГ чат
@@ -2543,6 +2608,34 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
       error.response ? error.response.data : error.message
     );
   }
+
+  await upsertPurchaseCreated({
+    sourceChannel: "telegram_bot",
+    email: meta.email || null,
+    fi: meta.fullName || null,
+    tgid: tgId,
+    createdTime: new Date().toISOString(),
+    purchaseSum: sum,
+    currency: meta.currency || "RUB",
+    lessons,
+    pricePerLesson:
+      Number.isFinite(Number(lessons)) && Number(lessons) > 0
+        ? Number(sum) / Number(lessons)
+        : null,
+    idPayment: invId,
+    status: "Created",
+    courseName: meta.courseName || meta.studio || null,
+    tag: normalizePurchaseTagForAirtable(tag),
+    nickname: meta.nickname || null,
+    phone: meta.phone || null,
+    locale: meta.locale || "ru",
+    tariffLabel: tariffLabel || null,
+    studioSlug: meta.studio || studioId || null,
+    slotStartAt: meta.slotStartAt || null,
+    format: format || null,
+    giftRecipient: meta.giftRecipient || null,
+    tgLinkToken: meta.tgLinkToken || null,
+  });
 }
 
 // Создаем и настраиваем Express-приложение
@@ -2676,6 +2769,8 @@ app.post("/webhook/robokassa", async (req, res) => {
       }
     }
 
+    await markPurchasePaidAndProcess(invId);
+
     return res.status(200).send(`OK${invId}`);
   } catch (e) {
     console.error(
@@ -2770,6 +2865,11 @@ bot.command("start", async (ctx) => {
           Status: "matched",
           tgId: ctx.from.id,
           Nickname: ctx.from.username || "", // если нужно
+        });
+        await matchPurchaseByTgTokenShadow({
+          token,
+          tgid: String(ctx.from.id),
+          username: ctx.from.username || null,
         });
     
         if (formatValue === "gym") {
@@ -3173,6 +3273,10 @@ bot.on("callback_query:data", async (ctx) => {
       {
         email: session?.email,
         studio: session?.studio,
+        courseName: session?.studio,
+        currency: studioDetails[session.studio]?.currency || "RUB",
+        locale: "ru",
+        slotStartAt: dateTime,
         fullName:
           session?.name ||
           [ctx.from?.first_name, ctx.from?.last_name]
@@ -3746,6 +3850,9 @@ bot.on("callback_query:data", async (ctx) => {
           {
             studio: actionInfo?.studio || session?.studio,
             tariffLabel: actionInfo?.tariffLabel,
+            courseName: actionInfo?.studio || session?.studio,
+            currency: actionInfo?.currency,
+            locale: "ru",
           }
         );
       }
@@ -3795,6 +3902,10 @@ bot.on("callback_query:data", async (ctx) => {
       {
         email: session?.email,
         studio: session?.studio,
+        courseName: session?.studio,
+        currency: studioDetails[session.studio]?.currency || "RUB",
+        locale: "ru",
+        slotStartAt: str2,
         fullName:
           session?.name ||
           [ctx.from?.first_name, ctx.from?.last_name]
@@ -3924,6 +4035,9 @@ bot.on("callback_query:data", async (ctx) => {
             nickname: ctx.from?.username || "",
             studio: actionInfo?.studio || session?.studio,
             tariffLabel: actionInfo?.tariffLabel,
+            courseName: actionInfo?.studio || session?.studio,
+            currency: actionInfo?.currency,
+            locale: "ru",
           }
         );
       }
@@ -4056,6 +4170,9 @@ bot.on("message:text", async (ctx) => {
       ctx.from.username,
       {
         email: userInfo.email,
+        courseName: "Deposit",
+        currency: "RUB",
+        locale: "ru",
         fullName:
           session?.name ||
           [ctx.from?.first_name, ctx.from?.last_name]

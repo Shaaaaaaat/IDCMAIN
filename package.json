@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.53.0",
     "@grammyjs/hydrate": "^1.4.1",
     "@grammyjs/storage-mongodb": "^2.4.2",
     "@grammyjs/storage-redis": "^2.4.2",
