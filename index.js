@@ -257,6 +257,15 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
     lessons,
     tariffLabel
   );
+  const airtableTag = normalizePurchaseTagForAirtable(tag);
+  const supabaseTag = resolveSupabasePurchaseTag({
+    tag,
+    airtableTag,
+    lessons,
+    sum: numAmount,
+    currency,
+    format: resolvedMeta.format,
+  });
   await upsertPurchaseCreated({
     sourceChannel: "telegram_bot",
     email,
@@ -272,8 +281,8 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
         : null,
     idPayment: paymentId,
     status: "Created",
-    courseName,
-    tag,
+    courseName: airtableTag || null,
+    tag: supabaseTag,
     locale: loc,
     tariffLabel: tariffLabel || resolvedMeta.tariffLabel || null,
     studioSlug: courseName || null,
@@ -2212,6 +2221,50 @@ function normalizePurchaseTagForAirtable(tag) {
   return raw.replace(/^\d+/, "").replace(/_start$/i, "");
 }
 
+function resolveSupabasePurchaseTag({ tag, airtableTag, lessons, sum, currency, format }) {
+  const rawTag = String(tag || "").trim();
+  const normalizedTag = String(airtableTag || normalizePurchaseTagForAirtable(rawTag)).trim();
+  const tagForChecks = normalizedTag || rawTag;
+  const tagLower = tagForChecks.toLowerCase();
+  const rawTagLower = rawTag.toLowerCase();
+  const lessonCount = Number(lessons);
+  const purchaseSum = Number(sum);
+  const currencyCode = String(currency || "RUB").toUpperCase();
+
+  if (tagLower.includes("deposit") || rawTagLower.includes("deposit")) return "deposit";
+
+  const isDs =
+    String(format || "").toLowerCase() === "ds" ||
+    tagLower.startsWith("ds_") ||
+    rawTagLower.startsWith("ds_");
+
+  if (isDs) {
+    if (lessonCount === 1) return "short1";
+    if (lessonCount === 36) return "long36";
+
+    if (lessonCount === 12) {
+      const short12Limits = {
+        RUB: 9600,
+        EUR: 108,
+        USD: 132,
+      };
+      const short12Limit = short12Limits[currencyCode];
+      if (Number.isFinite(purchaseSum) && short12Limit != null) {
+        return purchaseSum <= short12Limit ? "short12" : "long12";
+      }
+      return "long12";
+    }
+  }
+
+  if (/_short$/i.test(tagForChecks)) return "short1";
+  if (/_long$/i.test(tagForChecks) && lessonCount === 12) return "long12";
+
+  if (lessonCount === 1) return "short1";
+  if (lessonCount === 12) return "long12";
+
+  return normalizedTag || null;
+}
+
 function formatMoneyValue(value, currency) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "—";
@@ -2297,12 +2350,13 @@ async function sendTwoToAirtable(
     "Content-Type": "application/json",
   };
 
+  const airtableTag = normalizePurchaseTagForAirtable(tag);
   const fields = {
     tgId: tgId,
     inv_id: invId,
     Sum: sum,
     Lessons: lessons,
-    Tag: normalizePurchaseTagForAirtable(tag),
+    Tag: airtableTag,
     Date: date || formatPurchaseDateTime(new Date()),
     Nickname: nick,
     Status: "created",
@@ -2320,6 +2374,14 @@ async function sendTwoToAirtable(
   if (format) fields.format = format;
   if (tariffLabel) fields.tariff_label = tariffLabel;
   fields.Currency = ["RUB"];
+  const supabaseTag = resolveSupabasePurchaseTag({
+    tag,
+    airtableTag,
+    lessons,
+    sum,
+    currency: meta.currency || "RUB",
+    format,
+  });
 
   const data = {
     fields,
@@ -2349,8 +2411,8 @@ async function sendTwoToAirtable(
         : null,
     idPayment: invId,
     status: "Created",
-    courseName: meta.courseName || meta.studio || null,
-    tag: normalizePurchaseTagForAirtable(tag),
+    courseName: airtableTag || null,
+    tag: supabaseTag,
     nickname: nick || null,
     phone: meta.phone || null,
     locale: meta.locale || "ru",
@@ -2572,12 +2634,13 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
     "Content-Type": "application/json",
   };
 
+  const airtableTag = normalizePurchaseTagForAirtable(tag);
   const fields = {
     tgId: tgId,
     inv_id: invId,
     Sum: sum,
     Lessons: lessons,
-    Tag: normalizePurchaseTagForAirtable(tag),
+    Tag: airtableTag,
     Date: formatPurchaseDateTime(new Date()),
     Status: "created",
   };
@@ -2595,6 +2658,14 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   if (format) fields.format = format;
   if (tariffLabel) fields.tariff_label = tariffLabel;
   fields.Currency = ["RUB"];
+  const supabaseTag = resolveSupabasePurchaseTag({
+    tag,
+    airtableTag,
+    lessons,
+    sum,
+    currency: meta.currency || "RUB",
+    format,
+  });
 
   const data = {
     fields,
@@ -2624,8 +2695,8 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
         : null,
     idPayment: invId,
     status: "Created",
-    courseName: meta.courseName || meta.studio || null,
-    tag: normalizePurchaseTagForAirtable(tag),
+    courseName: airtableTag || null,
+    tag: supabaseTag,
     nickname: meta.nickname || null,
     phone: meta.phone || null,
     locale: meta.locale || "ru",
