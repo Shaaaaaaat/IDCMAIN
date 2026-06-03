@@ -1509,6 +1509,57 @@ function formatSlotStartDate(slotStartAt) {
   return "";
 }
 
+function normalizeSlotStartAtForSupabase(slotStartAt, now = new Date()) {
+  const raw = String(slotStartAt || "").trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  const match = raw.match(
+    /^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s+(\d{1,2}):(\d{2})$/
+  );
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  let year = match[3] ? Number(match[3]) : now.getFullYear();
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+
+  const dateOnly = new Date(Date.UTC(year, month - 1, day));
+  if (
+    dateOnly.getUTCFullYear() !== year ||
+    dateOnly.getUTCMonth() !== month - 1 ||
+    dateOnly.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  let candidate = new Date(Date.UTC(year, month - 1, day, hour - 3, minute));
+  if (!match[3] && candidate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
+    year += 1;
+  }
+
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00+03:00`;
+}
+
 const GYM_STUDIO_META = {
   msk_youcan: {
     name: "You Can",
@@ -2418,7 +2469,7 @@ async function sendTwoToAirtable(
     locale: meta.locale || "ru",
     tariffLabel: tariffLabel || null,
     studioSlug: meta.studio || studioId || null,
-    slotStartAt: meta.slotStartAt || null,
+    slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
     format: format || null,
     giftRecipient: meta.giftRecipient || null,
     tgLinkToken: meta.tgLinkToken || null,
@@ -2702,7 +2753,7 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
     locale: meta.locale || "ru",
     tariffLabel: tariffLabel || null,
     studioSlug: meta.studio || studioId || null,
-    slotStartAt: meta.slotStartAt || null,
+    slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
     format: format || null,
     giftRecipient: meta.giftRecipient || null,
     tgLinkToken: meta.tgLinkToken || null,
