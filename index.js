@@ -13,6 +13,12 @@ const {
   markPurchasePaidAndProcess,
   matchPurchaseByTgTokenShadow,
 } = require("./lib/supabase/purchases");
+const {
+  getClientInfoByTgId,
+  updateClientFuturePlan,
+  getClientFreezeState,
+  applyClientFreeze,
+} = require("./lib/supabase/clients");
 
 // Логируем запуск приложения с информацией о пользователе
 console.log("Приложение запущено");
@@ -1509,6 +1515,68 @@ function formatSlotStartDate(slotStartAt) {
   return "";
 }
 
+function formatSupabaseDateToDdMm(dateValue) {
+  const raw = String(dateValue || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return raw;
+  return `${match[3]}.${match[2]}`;
+}
+
+function parseDdMmToSupabaseDate(value, now = new Date()) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$/);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  let year = match[3] ? Number(match[3]) : now.getFullYear();
+
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+  let date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  if (!match[3] && date.getTime() < today.getTime()) {
+    year += 1;
+    date = new Date(Date.UTC(year, month - 1, day));
+  }
+
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+function addDaysToSupabaseDate(dateValue, daysToAdd) {
+  const raw = String(dateValue || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const days = Number(daysToAdd);
+  if (!match || !Number.isFinite(days)) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  date.setUTCDate(date.getUTCDate() + days);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(
+    date.getUTCDate()
+  )}`;
+}
+
 function normalizeSlotStartAtForSupabase(slotStartAt, now = new Date()) {
   const raw = String(slotStartAt || "").trim();
   if (!raw) return null;
@@ -1638,56 +1706,36 @@ async function getPurchaseByToken(token) {
 }
 
 
-// Функция для получения информации о пользователе из Airtable
+// Функция для получения информации о пользователе из Supabase clients
 async function getUserInfo(tgId) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
-
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-  };
-
   try {
-    const response = await axios.get(url, { headers });
-    const records = response.data.records;
+    const result = await getClientInfoByTgId(tgId);
+    if (!result.ok || !result.data) return null;
 
-    if (records.length > 0) {
-      const fields = records[0].fields || {};
-      const email = fields.email || "нет email";
-      const finalDay = fields.Final_day;
-      const tagRaw = String(fields.Tag || "неизвестен");
-      // split-теги обслуживаем той же логикой, что personal
-      const tag = tagRaw.replace(/split/gi, "personal");
-      const studioRaw =
-        fields.studio_id ?? fields.studioId ?? fields.Studio_ID ?? "";
-      const studioId = Array.isArray(studioRaw)
-        ? String(
-            studioRaw[0]?.name ?? studioRaw[0] ?? ""
-          ).trim()
-        : String(studioRaw || "").trim();
-      const balance =
-        fields.Balance !== undefined
-          ? fields.Balance
-          : "0";
-      const currency = fields.Currency || "неизвестна";
-      const oldPrices = !!fields.old_prices;
-      return {
-        email,
-        finalDay,
-        tag,
-        studioId,
-        balance,
-        currency,
-        oldPrices,
-      };
-    } else {
-      return null; // Если запись не найдена, возвращаем null
-    }
+    const fields = result.data || {};
+    const email = fields.email || "нет email";
+    const finalDay = formatSupabaseDateToDdMm(fields.final_day);
+    const tagRaw = String(fields.tag || "неизвестен");
+    // split-теги обслуживаем той же логикой, что personal
+    const tag = tagRaw.replace(/split/gi, "personal");
+    const studioId = resolveOfflineStudioIdForPurchase("", tag);
+    const balance = fields.balance !== undefined && fields.balance !== null
+      ? fields.balance
+      : "0";
+    const currency = fields.currency || "неизвестна";
+    const oldPrices = !!fields.old_prices;
+    return {
+      email,
+      finalDay,
+      tag,
+      studioId,
+      balance,
+      currency,
+      oldPrices,
+    };
   } catch (error) {
     console.error(
-      "Error fetching user info from Airtable:",
+      "Error fetching user info from Supabase:",
       error.response ? error.response.data : error.message
     );
     return null; // В случае ошибки возвращаем null
@@ -2477,47 +2525,34 @@ async function sendTwoToAirtable(
 
 }
 
-// Функция для обновления данных в Airtable - clients
+// Функция для обновления данных клиента в Supabase - clients
 async function sendDateToAirtable(tgId, date) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
-
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}`;
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-  };
-
   try {
-    // Шаг 1: Найти запись по tgId
-    const searchUrl = `${url}?filterByFormula={tgId}='${tgId}'`;
-    const searchResponse = await axios.get(searchUrl, { headers });
-    const records = searchResponse.data.records;
-
-    if (records.length === 0) {
+    const clientResult = await getClientInfoByTgId(tgId);
+    if (!clientResult.ok || !clientResult.data) {
       console.warn("Запись с таким tgId не найдена.");
       return;
     }
 
-    const record = records[0];
-    const recordId = record.id;
-    const fields = record.fields;
+    const fields = clientResult.data;
+    const isoDate = parseDdMmToSupabaseDate(date);
+    if (!isoDate) {
+      console.warn("Некорректная дата для обновления future_plan:", date);
+      return;
+    }
 
-    // Извлекаем нужные данные
-    const name = fields.FIO3 || "Неизвестный пользователь";
-    const oldDate = fields.Future_plan || "не указана";
-    const tag = fields.Tag || "неизвестен";
+    const name = fields.fio || "Неизвестный пользователь";
+    const oldDate = fields.future_plan
+      ? formatSupabaseDateToDdMm(fields.future_plan)
+      : "не указана";
+    const tag = fields.tag || "неизвестен";
 
-    // Шаг 2: Обновить запись
-    const updateUrl = `${url}/${recordId}`;
-    const data = {
-      fields: {
-        Future_plan: date,
-      },
-    };
-    await axios.patch(updateUrl, data, { headers });
-    console.log("Дата успешно обновлена в Airtable.");
+    const updateResult = await updateClientFuturePlan(tgId, isoDate);
+    if (!updateResult.ok) {
+      console.warn("Не удалось обновить future_plan в Supabase:", updateResult.reason);
+      return;
+    }
+    console.log("Дата успешно обновлена в Supabase.");
     // 4. Формируем сообщение
     const message = `${name} поменял дату пробного занятия с ${oldDate} на ${date}\nTag: ${tag}`;
 
@@ -2540,79 +2575,56 @@ async function sendDateToAirtable(tgId, date) {
     return message;
   } catch (error) {
     console.error(
-      "Ошибка при обновлении даты в Airtable:",
+      "Ошибка при обновлении даты в Supabase:",
       error.response ? error.response.data : error.message
     );
   }
 
 }
 
-// Функция для обновления данных в Airtable - clients БЕЗ отправки сообщения в ТГ чат
+// Функция для обновления данных в Supabase - clients БЕЗ отправки сообщения в ТГ чат
 async function sendDateToAirtable2(tgId, date) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
-
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}`;
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-  };
-
   try {
-    // Шаг 1: Найти запись по tgId
-    const searchUrl = `${url}?filterByFormula={tgId}='${tgId}'`;
-    const searchResponse = await axios.get(searchUrl, { headers });
-    const records = searchResponse.data.records;
-
-    if (records.length === 0) {
-      console.warn("Запись с таким tgId не найдена.");
+    const isoDate = parseDdMmToSupabaseDate(date);
+    if (!isoDate) {
+      console.warn("Некорректная дата для обновления future_plan:", date);
       return;
     }
 
-    const record = records[0];
-    const recordId = record.id;
-
-    // Шаг 2: Обновить запись
-    const updateUrl = `${url}/${recordId}`;
-    const data = {
-      fields: {
-        Future_plan: date,
-      },
-    };
-    await axios.patch(updateUrl, data, { headers });
-    console.log("Дата успешно обновлена в Airtable.");
+    const updateResult = await updateClientFuturePlan(tgId, isoDate);
+    if (!updateResult.ok) {
+      if (updateResult.reason === "not_found") {
+        console.warn("Запись с таким tgId не найдена.");
+      } else {
+        console.warn("Не удалось обновить future_plan в Supabase:", updateResult.reason);
+      }
+      return false;
+    }
+    console.log("Дата успешно обновлена в Supabase.");
     return true;
   } catch (error) {
     console.error(
-      "Ошибка при обновлении даты в Airtable:",
+      "Ошибка при обновлении даты в Supabase:",
       error.response ? error.response.data : error.message
     );
     return false;
   }
 }
 
-// Хелперы для функции заморозки абонемента (Final_day в формате dd.mm и Checkbox freeze_option)
+// Хелперы для функции заморозки абонемента (Supabase final_day date и freeze_option)
 async function getClientRecordForFreeze(tgId) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
-
-  const url = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
-  const headers = { Authorization: `Bearer ${apiKey}` };
-
   try {
-    const { data } = await axios.get(url, { headers });
-    if (!data.records || data.records.length === 0) return null;
-    const record = data.records[0];
+    const result = await getClientFreezeState(tgId);
+    if (!result.ok || !result.data) return null;
+
     return {
-      recordId: record.id,
-      finalDay: record.fields.Final_day,
-      freezeUsed: record.fields.freeze_option === true,
+      recordId: result.data.id,
+      finalDay: formatSupabaseDateToDdMm(result.data.final_day),
+      freezeUsed: result.data.freeze_option === true,
     };
   } catch (error) {
     console.error(
-      "Error fetching client record for freeze:",
+      "Error fetching client record for freeze from Supabase:",
       error.response ? error.response.data : error.message
     );
     return null;
@@ -2637,40 +2649,13 @@ function addDaysToDdMm(ddMmString, daysToAdd) {
 }
 
 async function applyFreezeToAirtable(tgId, daysToAdd) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const clientsId = process.env.AIRTABLE_CLIENTS_ID;
+  const result = await applyClientFreeze(tgId, daysToAdd);
+  if (!result.ok) return result;
 
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
+  return {
+    ok: true,
+    newFinalDay: formatSupabaseDateToDdMm(result.newFinalDay),
   };
-
-  // Найдём запись повторно, чтобы работать с актуальными данными
-  const searchUrl = `https://api.airtable.com/v0/${baseId}/${clientsId}?filterByFormula={tgId}='${tgId}'`;
-  const searchResp = await axios.get(searchUrl, { headers });
-  const records = searchResp.data.records;
-  if (!records || records.length === 0) return { ok: false, reason: "not_found" };
-
-  const record = records[0];
-  const recordId = record.id;
-  const freezeUsed = record.fields.freeze_option === true;
-  const finalDayValue = record.fields.Final_day;
-
-  if (freezeUsed) return { ok: false, reason: "already_used" };
-  if (!finalDayValue) return { ok: false, reason: "no_final_day" };
-
-  const newFinalDay = addDaysToDdMm(finalDayValue, daysToAdd);
-  if (!newFinalDay) return { ok: false, reason: "bad_date" };
-
-  const updateUrl = `https://api.airtable.com/v0/${baseId}/${clientsId}/${recordId}`;
-  await axios.patch(
-    updateUrl,
-    { fields: { Final_day: newFinalDay, freeze_option: true } },
-    { headers }
-  );
-
-  return { ok: true, newFinalDay };
 }
 
 // Функция для отправки данных в Airtable 2
@@ -3970,6 +3955,9 @@ bot.on("callback_query:data", async (ctx) => {
           actionInfo.lessons,
           actionInfo.tag,
           {
+            email: session?.email,
+            fullName,
+            nickname: ctx.from?.username || "",
             studio: actionInfo?.studio || session?.studio,
             tariffLabel: actionInfo?.tariffLabel,
             courseName: actionInfo?.studio || session?.studio,
