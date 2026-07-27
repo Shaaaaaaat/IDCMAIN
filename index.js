@@ -2988,6 +2988,20 @@ bot.command("start", async (ctx) => {
             ? `${firstWorkoutDate} состоится ваша первая тренировка в формате I Do Calisthenics.`
             : "Скоро состоится ваша первая тренировка в формате I Do Calisthenics.";
 
+          if (studioId === "msk_youcan") {
+            try {
+              await ctx.reply(
+                `<b>Пока хорошая погода, тренировки проходят на открытом воздухе в парке Лужники.</b>\n\nНедалеко от канатной дороги: <a href="https://yandex.com/maps/213/moscow/?ll=37.553657%2C55.713098&mode=poi&poi%5Bpoint%5D=37.553265%2C55.713200&poi%5Buri%5D=ymapsbm1%3A%2F%2Forg%3Foid%3D100342209253&z=19">улица Лужники, 24с59</a>`,
+                {
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true,
+                }
+              );
+            } catch (error) {
+              console.error("Failed to send YouCan outdoor message:", error);
+            }
+          }
+
           await ctx.reply(
             `Ура, ${fio}, оплата прошла успешно!\n${dateLine}\n\nЗал называется ${studioName} и находится по адресу:\n${studioAddress}\n\nС собой берём удобную спортивную форму и бутылочку воды, также при необходимости принадлежности для душа.\n\nТренер ${trainerName} будет ждать вас в зале 😊`
           );
