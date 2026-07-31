@@ -20,6 +20,14 @@ const {
   applyClientFreeze,
 } = require("./lib/supabase/clients");
 
+const PURCHASE_LINK_ADMIN_CHAT_ID = Number(
+  process.env.PURCHASE_LINK_ADMIN_CHAT_ID
+);
+
+if (!Number.isSafeInteger(PURCHASE_LINK_ADMIN_CHAT_ID)) {
+  throw new Error("PURCHASE_LINK_ADMIN_CHAT_ID is missing or invalid");
+}
+
 // Логируем запуск приложения с информацией о пользователе
 console.log("Приложение запущено");
 
@@ -2978,6 +2986,51 @@ bot.command("start", async (ctx) => {
           tgid: String(ctx.from.id),
           username: ctx.from.username || null,
         });
+
+        try {
+          const username = ctx.from.username
+            ? `@${ctx.from.username.replace(/^@+/, "")}`
+            : "username отсутствует";
+        
+          const email = String(
+            payment.fields?.email ||
+            payment.fields?.Email ||
+            ""
+          ).trim();
+        
+          const fio = String(
+            payment.fields?.FIO ||
+            payment.fields?.Fio ||
+            payment.fields?.fi ||
+            ""
+          ).trim();
+        
+          const lines = [
+            "🔗 Telegram привязан к покупке",
+            "",
+          ];
+        
+          if (fio) {
+            lines.push(`Клиент: ${fio}`);
+          }
+        
+          if (email) {
+            lines.push(`Email: ${email}`);
+          }
+        
+          lines.push(
+            `TG: ${username}`,
+            `TG ID: ${ctx.from.id}`
+          );
+        
+          await bot.api.sendMessage(
+            PURCHASE_LINK_ADMIN_CHAT_ID,
+            lines.join("\n")
+          );
+          
+        } catch {
+          console.error("telegram_purchase_link_admin_follow_up_failed");
+        }
     
         if (formatValue === "gym") {
           const meta = GYM_STUDIO_META[studioId] || null;
