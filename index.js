@@ -28,6 +28,71 @@ if (!Number.isSafeInteger(PURCHASE_LINK_ADMIN_CHAT_ID)) {
   throw new Error("PURCHASE_LINK_ADMIN_CHAT_ID is missing or invalid");
 }
 
+function truncateLogText(value, maxLength = 400) {
+  const text = String(value == null ? "" : value);
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function redactLogText(value) {
+  return truncateLogText(value)
+    .replace(/bearer\s+[^\s,;]+/gi, "Bearer [REDACTED]")
+    .replace(/([?&](?:token|key|signature|SignatureValue|Receipt)=)[^&\s]+/gi, "$1[REDACTED]")
+    .replace(/(Authorization\s*:\s*)[^\s,;]+/gi, "$1[REDACTED]");
+}
+
+function safeScalar(value) {
+  if (value == null) return null;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return redactLogText(value);
+  }
+  return null;
+}
+
+function pickSafeResponseData(data) {
+  if (data == null) return null;
+  const scalar = safeScalar(data);
+  if (scalar != null) return scalar;
+  if (typeof data !== "object") return null;
+
+  const safe = {};
+  for (const key of ["status", "code", "error", "message", "description"]) {
+    const value = safeScalar(data[key]);
+    if (value != null) safe[key] = value;
+  }
+  return Object.keys(safe).length ? safe : null;
+}
+
+function safeErrorSummary(error) {
+  if (!error) return null;
+  return Object.fromEntries(
+    Object.entries({
+      name: safeScalar(error.name),
+      message: safeScalar(error.message),
+      code: safeScalar(error.code),
+      status: safeScalar(error.status || error.response?.status),
+      description: safeScalar(error.response?.description || error.description),
+      response: pickSafeResponseData(error.response?.data),
+    }).filter(([, value]) => value != null)
+  );
+}
+
+function safeLogTgId(value) {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return null;
+  return `tg_${crypto.createHash("sha256").update(raw).digest("hex").slice(0, 10)}`;
+}
+
+function logError(event, error, context = {}) {
+  console.error(event, {
+    ...context,
+    error: safeErrorSummary(error),
+  });
+}
+
 // Логируем запуск приложения с информацией о пользователе
 console.log("Приложение запущено");
 
@@ -36,7 +101,7 @@ const bot = new Bot(process.env.BOT_API_KEY); // Ваш API ключ от Telegr
 
 // Защита от падения процесса на единичной ошибке middleware
 bot.catch((err) => {
-  console.error("Unhandled bot error:", err);
+  logError("unhandled_bot_error", err);
 });
 
 // Подключаемся к MongoDB
@@ -1742,10 +1807,7 @@ async function getUserInfo(tgId) {
       oldPrices,
     };
   } catch (error) {
-    console.error(
-      "Error fetching user info from Supabase:",
-      error.response ? error.response.data : error.message
-    );
+    logError("supabase_user_info_fetch_failed", error);
     return null; // В случае ошибки возвращаем null
   }
 }
@@ -2139,7 +2201,7 @@ async function sendToWebhook(studio, telegramId) {
     await axios.post(webhookUrl, data);
     console.log("Данные успешно отправлены на вебхук");
   } catch (error) {
-    console.error("Ошибка при отправке на вебхук:", error.message);
+    logError("make_webhook_send_failed", error, { tg: safeLogTgId(telegramId) });
   }
 }
 
@@ -2168,7 +2230,7 @@ async function resendToWebhook(tag, telegramId) {
     await axios.post(webhookUrl, data);
     console.log("Данные успешно отправлены на вебхук");
   } catch (error) {
-    console.error("Ошибка при отправке на вебхук:", error.message);
+    logError("make_reschedule_webhook_send_failed", error, { tg: safeLogTgId(telegramId) });
   }
 }
 
@@ -2190,10 +2252,7 @@ async function checkUserInAirtable(tgId) {
     );
     return response.data.records.length > 0; // Если записи найдены, возвращаем true
   } catch (error) {
-    console.error(
-      "Error checking user in Airtable:",
-      error.response ? error.response.data : error.message
-    );
+    logError("airtable_user_check_failed", error, { tg: safeLogTgId(tgId) });
     return false; // В случае ошибки также возвращаем false
   }
 }
@@ -2223,10 +2282,7 @@ async function sendFirstAirtable(tgId, name, nickname) {
     return response.data.id; // Возвращаем идентификатор записи
     // await axios.post(url, data, { headers });
   } catch (error) {
-    console.error(
-      "Error sending data to Airtable:",
-      error.response ? error.response.data : error.message
-    );
+    logError("airtable_first_send_failed", error, { tg: safeLogTgId(tgId) });
   }
 }
 
@@ -2252,10 +2308,7 @@ async function updateAirtableRecord(id, city, studio) {
   try {
     await axios.patch(url, data, { headers }); // Используем PATCH для обновления
   } catch (error) {
-    console.error(
-      "Error updating data in Airtable:",
-      error.response ? error.response.data : error.message
-    );
+    logError("airtable_record_update_failed", error);
   }
 }
 
@@ -2285,10 +2338,7 @@ async function sendToAirtable(name, email, phone, tgId, city, studio) {
   try {
     await axios.post(url, data, { headers });
   } catch (error) {
-    console.error(
-      "Error sending data to Airtable:",
-      error.response ? error.response.data : error.message
-    );
+    logError("airtable_lead_send_failed", error, { tg: safeLogTgId(tgId) });
   }
 
 }
@@ -2497,10 +2547,10 @@ async function sendTwoToAirtable(
   try {
     await axios.post(url, data, { headers });
   } catch (error) {
-    console.error(
-      "Error sending data to Airtable:",
-      error.response ? error.response.data : error.message
-    );
+    logError("airtable_purchase_send_failed", error, {
+      payment_id: safeScalar(invId),
+      tg: safeLogTgId(tgId),
+    });
   }
 
   await upsertPurchaseCreated({
@@ -2582,10 +2632,7 @@ async function sendDateToAirtable(tgId, date) {
     console.log("Дата обновлена, сообщение отправлено в Telegram и Make.");
     return message;
   } catch (error) {
-    console.error(
-      "Ошибка при обновлении даты в Supabase:",
-      error.response ? error.response.data : error.message
-    );
+    logError("supabase_future_plan_update_failed", error, { tg: safeLogTgId(tgId) });
   }
 
 }
@@ -2611,10 +2658,7 @@ async function sendDateToAirtable2(tgId, date) {
     console.log("Дата успешно обновлена в Supabase.");
     return true;
   } catch (error) {
-    console.error(
-      "Ошибка при обновлении даты в Supabase:",
-      error.response ? error.response.data : error.message
-    );
+    logError("supabase_future_plan_update_failed", error, { tg: safeLogTgId(tgId) });
     return false;
   }
 }
@@ -2631,10 +2675,7 @@ async function getClientRecordForFreeze(tgId) {
       freezeUsed: result.data.freeze_option === true,
     };
   } catch (error) {
-    console.error(
-      "Error fetching client record for freeze from Supabase:",
-      error.response ? error.response.data : error.message
-    );
+    logError("supabase_freeze_state_fetch_failed", error, { tg: safeLogTgId(tgId) });
     return null;
   }
 }
@@ -2718,10 +2759,10 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   try {
     await axios.post(url, data, { headers });
   } catch (error) {
-    console.error(
-      "Error sending data to Airtable:",
-      error.response ? error.response.data : error.message
-    );
+    logError("airtable_purchase_send_failed", error, {
+      payment_id: safeScalar(invId),
+      tg: safeLogTgId(tgId),
+    });
   }
 
   await upsertPurchaseCreated({
@@ -2784,9 +2825,7 @@ app.post("/payments/ameria/init", async (req, res) => {
     });
     return res.json(result);
   } catch (e) {
-    const errData = e.response?.data?.error || e.response?.data;
-    const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (e.message || "Init failed");
-    console.error("Ameria init error:", msg);
+    logError("ameria_init_failed", e);
     return res.status(500).json({ ok: false, error: e.message || "Init failed" });
   }
 });
@@ -2811,9 +2850,7 @@ app.post("/payments/ameria/check", async (req, res) => {
     const result = await checkAmeriaPayment(paymentId);
     return res.json(result);
   } catch (e) {
-    const errData = e.response?.data?.error || e.response?.data;
-    const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (e.message || "Check failed");
-    console.error("Ameria check error:", msg);
+    logError("ameria_check_failed", e, { payment_id: safeScalar(req.body?.paymentId) });
     return res.status(500).json({ ok: false, error: e.message || "Check failed" });
   }
 });
@@ -2850,7 +2887,7 @@ app.post("/webhook/robokassa", async (req, res) => {
 
     const record = await getPurchaseRecordByInvId(invId);
     if (!record) {
-      console.warn(`Robokassa callback: purchase not found for inv_id=${invId}`);
+      console.warn("robokassa_purchase_not_found", { payment_id: safeScalar(invId) });
       return res.status(200).send(`OK${invId}`);
     }
 
@@ -2862,10 +2899,9 @@ app.post("/webhook/robokassa", async (req, res) => {
     try {
       await bot.api.sendMessage(-4505387868, notifyMessage);
     } catch (notifyErr) {
-      console.error(
-        "Robokassa callback notify error:",
-        notifyErr.response?.description || notifyErr.message
-      );
+      logError("robokassa_admin_notify_failed", notifyErr, {
+        payment_id: safeScalar(invId),
+      });
     }
 
     // Уведомление плательщику в личный чат бота об успешной оплате
@@ -2877,10 +2913,10 @@ app.post("/webhook/robokassa", async (req, res) => {
           "Оплата прошла успешно. Спасибо за покупку!"
         );
       } catch (payerErr) {
-        console.error(
-          "Robokassa callback payer notify error:",
-          payerErr.response?.description || payerErr.message
-        );
+        logError("robokassa_payer_notify_failed", payerErr, {
+          payment_id: safeScalar(invId),
+          tg: safeLogTgId(payerTgId),
+        });
       }
     }
 
@@ -2888,10 +2924,7 @@ app.post("/webhook/robokassa", async (req, res) => {
 
     return res.status(200).send(`OK${invId}`);
   } catch (e) {
-    console.error(
-      "Robokassa callback fatal error:",
-      e.response?.data || e.message
-    );
+    logError("robokassa_callback_failed", e);
     return res.status(500).send("Server error");
   }
 });
@@ -3051,7 +3084,7 @@ bot.command("start", async (ctx) => {
                 }
               );
             } catch (error) {
-              console.error("Failed to send YouCan outdoor message:", error);
+              logError("youcan_outdoor_message_failed", error);
             }
           }
 
@@ -3102,7 +3135,7 @@ bot.command("start", async (ctx) => {
         // но безопаснее пока просто закончить
         return;
       } catch (e) {
-        console.error("start token flow error:", e);
+        logError("start_token_flow_error", e, { tg: safeLogTgId(tgId) });
         await ctx.reply(
           "Не удалось проверить оплату из-за технической ошибки. Попробуй ещё раз чуть позже или напиши в поддержку."
         );
@@ -3221,7 +3254,7 @@ bot.command("start", async (ctx) => {
         });
       }
     } catch (error) {
-      console.error("Произошла ошибка:", error);
+      logError("start_flow_error", error, { tg: safeLogTgId(ctx.from?.id) });
     }
   }
 });
@@ -3239,7 +3272,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         "[lesson_1] webhook error:",
-        error?.response?.data || error?.message || error
+        safeErrorSummary(error)
       );
       await ctx.answerCallbackQuery({
         text: "Не удалось отправить данные",
@@ -3257,7 +3290,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         "[exercises_1] webhook error:",
-        error?.response?.data || error?.message || error
+        safeErrorSummary(error)
       );
       await ctx.answerCallbackQuery({
         text: "Не удалось отправить данные",
@@ -3275,7 +3308,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         "[about_course] webhook error:",
-        error?.response?.data || error?.message || error
+        safeErrorSummary(error)
       );
       await ctx.answerCallbackQuery({
         text: "Не удалось отправить данные",
@@ -3296,7 +3329,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         `[${action}] webhook error:`,
-        error?.response?.data || error?.message || error
+        safeErrorSummary(error)
       );
     }
 
@@ -3316,7 +3349,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         "[yes_interesting] webhook error:",
-        error?.response?.data || error?.message || error
+        safeErrorSummary(error)
       );
       await ctx.answerCallbackQuery({
         text: "Не удалось отправить данные",
@@ -3337,7 +3370,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       console.error(
         "[not_interesting] webhook error:",
-        error?.response?.data || error?.message || error
+        safeErrorSummary(error)
       );
       await ctx.answerCallbackQuery({
         text: "Не удалось отправить данные",
@@ -3389,10 +3422,7 @@ bot.on("callback_query:data", async (ctx) => {
       try {
         await bot.api.sendMessage(recipientId, notifyText);
       } catch (err) {
-        console.error(
-          `[reschedule] notify failed for ${recipientId}:`,
-          err?.message || err
-        );
+        logError("reschedule_notify_failed", err, { recipient_id: recipientId });
       }
     }
 
@@ -3736,9 +3766,9 @@ bot.on("callback_query:data", async (ctx) => {
     // Проверяем, существует ли сессия
     let session = await Session.findOne({ userId: ctx.from.id.toString() });
     if (!session) {
-      console.log(
-        `Сессия не найдена для пользователя ${ctx.from.id}. Создаём новую.`
-      );
+      console.log("Сессия не найдена, создаём новую.", {
+        tg: safeLogTgId(ctx.from.id),
+      });
       session = new Session({
         userId: ctx.from.id.toString(),
         step: "start",
@@ -3787,7 +3817,9 @@ bot.on("callback_query:data", async (ctx) => {
           }\nID: ${ctx.from?.id}`
         );
       } catch (error) {
-        console.error(`Не удалось отправить сообщение`, error);
+        logError("training_request_admin_notify_failed", error, {
+          tg: safeLogTgId(ctx.from?.id),
+        });
       }
 
       if (
@@ -4037,9 +4069,9 @@ bot.on("callback_query:data", async (ctx) => {
       session.step = "completed";
       await session.save();
     } catch (err) {
-      const errData = err.response?.data?.error || err.response?.data;
-      const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (err.message || "unknown");
-      console.error("Ошибка генерации ссылки:", msg);
+      logError("online_payment_link_generation_failed", err, {
+        tg: safeLogTgId(ctx.from?.id),
+      });
       await ctx.reply("Не удалось сформировать ссылку на оплату. Попробуйте позже или напишите в поддержку.");
     }
     await ctx.answerCallbackQuery();
@@ -4048,7 +4080,7 @@ bot.on("callback_query:data", async (ctx) => {
     const date = buttonText.match(/\(([^)]+)\)/);
     const str = JSON.stringify(date[1]);
     const str2 = JSON.parse(str);
-    console.log(`Выбрал дату групповой тренировки - ${str2}`);
+    console.log("Выбрал дату групповой тренировки.");
 
     await ctx.deleteMessage();
 
@@ -4096,7 +4128,7 @@ bot.on("callback_query:data", async (ctx) => {
     const date = buttonText.match(/\(([^)]+)\)/);
     const str = JSON.stringify(date[1]);
     const str5 = JSON.parse(str);
-    console.log(`Выбрал дату онлайн тренировки - ${str5}`);
+    console.log("Выбрал дату онлайн тренировки.");
 
     await ctx.deleteMessage();
 
@@ -4128,7 +4160,7 @@ bot.on("callback_query:data", async (ctx) => {
     const date2 = buttonText2.match(/\(([^)]+)\)/);
     const str3 = JSON.stringify(date2[1]);
     const str4 = JSON.parse(str3);
-    console.log(`Выбрал дату групповой тренировки - ${str4}`);
+    console.log("Выбрал дату групповой тренировки.");
     await sendDateToAirtable(ctx.from.id, str4);
 
     await ctx.reply(`Отлично! Вы успешно перенесли запись на: ${str4}.`);
@@ -4150,7 +4182,7 @@ bot.on("callback_query:data", async (ctx) => {
       const session = await Session.findOne({ userId: tgId.toString() });
       if (userInfo) {
         const { tag, currency, oldPrices } = userInfo;
-        console.log(tag);
+        console.log("Проверяю тариф для продолжения тренировок.");
         const keyboard = generateKeyboard(tag, oldPrices);
         if (keyboard) {
           await ctx.reply(
@@ -4170,7 +4202,7 @@ bot.on("callback_query:data", async (ctx) => {
         await session.save(); // Сохраняем обновленную сессию
       }
     } catch (error) {
-      console.error("Произошла ошибка:", error);
+      logError("continue_training_flow_failed", error, { tg: safeLogTgId(tgId) });
     }
   } else if (action.startsWith("buy")) {
     const userInfo = await getUserInfo(ctx.from.id);
@@ -4219,9 +4251,9 @@ bot.on("callback_query:data", async (ctx) => {
         );
       }
     } catch (err) {
-      const errData = err.response?.data?.error || err.response?.data;
-      const msg = errData ? (typeof errData === "string" ? errData : JSON.stringify(errData)) : (err.message || "unknown");
-      console.error("Ошибка генерации ссылки:", msg);
+      logError("existing_client_payment_link_generation_failed", err, {
+        tg: safeLogTgId(ctx.from?.id),
+      });
       await ctx.reply("Не удалось сформировать ссылку на оплату. Попробуйте позже или напишите в поддержку.");
     }
   } else if (action.startsWith("a_net")) {
@@ -4245,7 +4277,7 @@ bot.on("message:text", async (ctx) => {
 
   // Если сессия не найдена, создаём новую
   if (!session) {
-    console.log(`Сессия не найдена для пользователя ${tgId}. Создаём новую.`);
+    console.log("Сессия не найдена, создаём новую.", { tg: safeLogTgId(tgId) });
     session = new Session({
       userId: tgId,
       step: "start_сlient",
@@ -4307,10 +4339,7 @@ bot.on("message:text", async (ctx) => {
         reply_markup: kb,
       });
     } catch (error) {
-      console.error(
-        "[ameria_test] init error:",
-        error?.response?.data || error?.message || error
-      );
+      logError("ameria_test_init_failed", error, { tg: safeLogTgId(tgId) });
       await ctx.reply("Не удалось сгенерировать Ameria-ссылки. Проверьте AMERIA_* env.");
     }
     return;
@@ -4429,11 +4458,11 @@ bot.on("message:text", async (ctx) => {
         try {
           await bot.api.sendMessage(-4510303967, notify);
         } catch (notifyErr) {
-          console.error("Не удалось отправить уведомление о заморозке:", notifyErr);
+          logError("freeze_notify_failed", notifyErr, { tg: safeLogTgId(tgId) });
         }
       }
     } catch (e) {
-      console.error("Freeze error:", e);
+      logError("freeze_flow_failed", e, { tg: safeLogTgId(tgId) });
       await ctx.reply(
         "Произошла непредвиденная ошибка. Попробуйте позже или свяжитесь с менеджером @IDC_Manager"
       );
@@ -4463,10 +4492,7 @@ bot.on("message:text", async (ctx) => {
       try {
         await bot.api.sendMessage(recipientId, notifyText);
       } catch (error) {
-        console.error(
-          `[персоналка] не удалось отправить ${recipientId}:`,
-          error?.message || error
-        );
+        logError("personal_training_notify_failed", error, { recipient_id: recipientId });
       }
     }
 
@@ -4492,7 +4518,7 @@ bot.on("message:text", async (ctx) => {
         `Пользователь ${username} отказался от тренировок и оставил отзыв:\n"${ctx.message.text}"`
       );
     } catch (error) {
-      console.error("Не удалось отправить сообщение с отзывом:", error);
+      logError("feedback_notify_failed", error, { tg: safeLogTgId(tgId) });
     }
 
     // Благодарим пользователя за обратную связь
@@ -4615,12 +4641,12 @@ bot.on("message:text", async (ctx) => {
           } else if (scheduleResp.status === 400) {
             console.error(
               "[reschedule] schedule api 400 (integration bug):",
-              JSON.stringify({
-                tgId,
+              {
+                tg: safeLogTgId(tgId),
                 studioId,
                 status: scheduleResp.status,
-                body: scheduleResp.data || null,
-              })
+                error: safeScalar(scheduleResp.error),
+              }
             );
             await ctx.reply(
               "Не удалось получить расписание. Напишите менеджеру @IDC_Manager."
@@ -4633,13 +4659,12 @@ bot.on("message:text", async (ctx) => {
 
           console.error(
             "[reschedule] schedule api non-200:",
-            JSON.stringify({
-              tgId,
+            {
+              tg: safeLogTgId(tgId),
               studioId,
               status: scheduleResp.status,
-              body: scheduleResp.data || null,
-              error: scheduleResp.error || null,
-            })
+              error: safeScalar(scheduleResp.error),
+            }
           );
           return;
         }
@@ -5193,7 +5218,7 @@ async function handleExistingUserScenario(ctx) {
       }
     }
   } catch (error) {
-    console.error("Произошла ошибка:", error);
+    logError("existing_user_scenario_failed", error, { tg: safeLogTgId(ctx.from?.id) });
   }
 }
 
