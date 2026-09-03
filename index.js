@@ -872,7 +872,7 @@ const actionData = {
     paymentSystem: "robokassa",
   },
   buy_23400_ds_rub: {
-    sum: 23400,
+    sum: 25200,
     lessons: 36,
     tag: "ds_rub",
     currency: "RUB",
@@ -1451,7 +1451,7 @@ const buttonsData = {
         callback_data: "buy_11400_ds_rub",
       },
       {
-        text: "36 занятий (23 400₽) — действует 14 недель",
+        text: "36 занятий (25 200₽) — действует 18 недель",
         callback_data: "buy_23400_ds_rub",
       },
       {
