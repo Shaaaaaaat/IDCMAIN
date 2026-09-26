@@ -12,6 +12,7 @@ const {
   upsertPurchaseCreated,
   markPurchasePaidAndProcess,
   matchPurchaseByTgTokenShadow,
+  normalizePersonName,
 } = require("./lib/supabase/purchases");
 const {
   getClientInfoByTgId,
@@ -311,6 +312,7 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
   }
   const paymentId = data.PaymentID;
   const paymentUrl = `${base}/Payments/Pay?id=${paymentId}&lang=${loc}`;
+  const normalizedFullName = normalizePersonName(fullName);
   const buyId = process.env.AIRTABLE_BUY_ID;
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
@@ -324,7 +326,9 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
     email: String(email || "").slice(0, 255),
   };
   if (tgId != null) fields.tgId = Number(tgId);
-  if (fullName) fields.FIO = String(fullName).slice(0, 255);
+  if (normalizedFullName) {
+    fields.FIO = normalizedFullName;
+  }
   await axios.post(
     `https://api.airtable.com/v0/${baseId}/${buyId}`,
     { fields },
@@ -348,7 +352,7 @@ async function initAmeriaPayment({ tgId, amount, currency, email, fullName, tari
   await upsertPurchaseCreated({
     sourceChannel: "telegram_bot",
     email,
-    fi: fullName,
+    fi: normalizedFullName,
     tgid: tgId,
     createdTime: new Date().toISOString(),
     purchaseSum: numAmount,
@@ -500,7 +504,7 @@ async function generateSecondPaymentLink(buy, email, tgId, fullName) {
       amount: actionInfo.sum,
       currency: actionInfo.currency,
       email: e,
-      fullName: fullName || "",
+      fullName,
       tariffId,
       tariffLabel,
       lessons: actionInfo.lessons,
@@ -1799,6 +1803,7 @@ async function getUserInfo(tgId) {
     const oldPrices = !!fields.old_prices;
     return {
       email,
+      fio: normalizePersonName(fields.fio),
       finalDay,
       tag,
       studioId,
@@ -2508,6 +2513,7 @@ async function sendTwoToAirtable(
   };
 
   const airtableTag = normalizePurchaseTagForAirtable(tag);
+  const normalizedFullName = normalizePersonName(meta.fullName);
   const fields = {
     tgId: tgId,
     inv_id: invId,
@@ -2519,7 +2525,9 @@ async function sendTwoToAirtable(
     Status: "created",
   };
   if (meta.email) fields.email = meta.email;
-  if (meta.fullName) fields.FIO = meta.fullName;
+  if (normalizedFullName) {
+    fields.FIO = normalizedFullName;
+  }
   const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
   if (studioId) fields.studio_id = studioId;
   const { format, tariffLabel } = resolveFormatAndTariffLabelForPurchase(
@@ -2556,7 +2564,7 @@ async function sendTwoToAirtable(
   await upsertPurchaseCreated({
     sourceChannel: "telegram_bot",
     email: meta.email || null,
-    fi: meta.fullName || null,
+    fi: normalizedFullName,
     tgid: tgId,
     createdTime: new Date().toISOString(),
     purchaseSum: sum,
@@ -2720,6 +2728,7 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   };
 
   const airtableTag = normalizePurchaseTagForAirtable(tag);
+  const normalizedFullName = normalizePersonName(meta.fullName);
   const fields = {
     tgId: tgId,
     inv_id: invId,
@@ -2730,7 +2739,9 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
     Status: "created",
   };
   if (meta.email) fields.email = meta.email;
-  if (meta.fullName) fields.FIO = meta.fullName;
+  if (normalizedFullName) {
+    fields.FIO = normalizedFullName;
+  }
   if (meta.nickname) fields.Nickname = meta.nickname;
   const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
   if (studioId) fields.studio_id = studioId;
@@ -2768,7 +2779,7 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   await upsertPurchaseCreated({
     sourceChannel: "telegram_bot",
     email: meta.email || null,
-    fi: meta.fullName || null,
+    fi: normalizedFullName,
     tgid: tgId,
     createdTime: new Date().toISOString(),
     purchaseSum: sum,
@@ -2815,7 +2826,7 @@ app.post("/payments/ameria/init", async (req, res) => {
       amount: numAmount,
       currency: String(currency).toUpperCase(),
       email,
-      fullName: fullName || "Client",
+      fullName,
       tariffId: tariffId || "",
       tariffLabel: tariffLabel || `${amount} ${currency}`,
       lessons: lessons || 1,
@@ -3466,6 +3477,14 @@ bot.on("callback_query:data", async (ctx) => {
 
     const sum = studioDetails[session.studio]?.price;
     const tag = studioDetails[session.studio]?.tag;
+    const purchaseName =
+      normalizePersonName(session?.name) ||
+      normalizePersonName(
+        [ctx.from?.first_name, ctx.from?.last_name]
+          .filter(Boolean)
+          .join(" ")
+      ) ||
+      null;
     await sendTwoToAirtable(
       ctx.from.id,
       paymentId,
@@ -3481,12 +3500,7 @@ bot.on("callback_query:data", async (ctx) => {
         currency: studioDetails[session.studio]?.currency || "RUB",
         locale: "ru",
         slotStartAt: dateTime,
-        fullName:
-          session?.name ||
-          [ctx.from?.first_name, ctx.from?.last_name]
-            .filter(Boolean)
-            .join(" ")
-            .trim(),
+        fullName: purchaseName,
       }
     );
 
@@ -4034,12 +4048,19 @@ bot.on("callback_query:data", async (ctx) => {
   } else if (session.step === "online_buttons") {
     const actionInfo = actionData[ctx.callbackQuery.data];
     try {
-      const fullName = session?.name || [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ").trim() || "";
+      const purchaseName =
+        normalizePersonName(session?.name) ||
+        normalizePersonName(
+          [ctx.from?.first_name, ctx.from?.last_name]
+            .filter(Boolean)
+            .join(" ")
+        ) ||
+        null;
     const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
         action,
         session.email,
         ctx.from.id,
-        fullName
+        purchaseName
       );
 
       await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
@@ -4055,7 +4076,7 @@ bot.on("callback_query:data", async (ctx) => {
           actionInfo.tag,
           {
             email: session?.email,
-            fullName,
+            fullName: purchaseName,
             nickname: ctx.from?.username || "",
             studio: actionInfo?.studio || session?.studio,
             tariffLabel: actionInfo?.tariffLabel,
@@ -4100,6 +4121,14 @@ bot.on("callback_query:data", async (ctx) => {
     const sum = studioDetails[session.studio].price;
     const lessons = 1;
     const tag = studioDetails[session.studio].tag; // Берем тег из студии
+    const purchaseName =
+      normalizePersonName(session?.name) ||
+      normalizePersonName(
+        [ctx.from?.first_name, ctx.from?.last_name]
+          .filter(Boolean)
+          .join(" ")
+      ) ||
+      null;
     await sendTwoToAirtable(
       ctx.from.id,
       paymentId,
@@ -4115,12 +4144,7 @@ bot.on("callback_query:data", async (ctx) => {
         currency: studioDetails[session.studio]?.currency || "RUB",
         locale: "ru",
         slotStartAt: str2,
-        fullName:
-          session?.name ||
-          [ctx.from?.first_name, ctx.from?.last_name]
-            .filter(Boolean)
-            .join(" ")
-            .trim(),
+        fullName: purchaseName,
       }
     );
   } else if (action.startsWith("testday")) {
@@ -4219,13 +4243,21 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (_) {}
 
     const actionInfo = actionData[action];
-    const fullName = session?.name || [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ").trim() || "";
+    const purchaseName =
+      normalizePersonName(userInfo?.fio) ||
+      normalizePersonName(session?.name) ||
+      normalizePersonName(
+        [ctx.from?.first_name, ctx.from?.last_name]
+          .filter(Boolean)
+          .join(" ")
+      ) ||
+      null;
     try {
       const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
         action,
         email,
         ctx.from.id,
-        fullName
+        purchaseName
       );
 
       await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
@@ -4240,7 +4272,7 @@ bot.on("callback_query:data", async (ctx) => {
           actionInfo.tag,
           {
             email,
-            fullName,
+            fullName: purchaseName,
             nickname: ctx.from?.username || "",
             studio: actionInfo?.studio || session?.studio,
             tariffLabel: actionInfo?.tariffLabel,
@@ -4291,9 +4323,14 @@ bot.on("message:text", async (ctx) => {
     const userInfo = await getUserInfo(tgId);
     const email = String(session?.email || userInfo?.email || "").trim();
     const fullName =
-      session?.name ||
-      [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ").trim() ||
-      "Test User";
+      normalizePersonName(userInfo?.fio) ||
+      normalizePersonName(session?.name) ||
+      normalizePersonName(
+        [ctx.from?.first_name, ctx.from?.last_name]
+          .filter(Boolean)
+          .join(" ")
+      ) ||
+      null;
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       await ctx.reply("Не найден корректный email для генерации Ameria-ссылок.");
@@ -4364,6 +4401,15 @@ bot.on("message:text", async (ctx) => {
       courseName: "Deposit",
     });
     await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
+    const purchaseName =
+      normalizePersonName(userInfo?.fio) ||
+      normalizePersonName(session?.name) ||
+      normalizePersonName(
+        [ctx.from?.first_name, ctx.from?.last_name]
+          .filter(Boolean)
+          .join(" ")
+      ) ||
+      null;
 
     // Отправляем данные о депозите в Airtable
     await sendTwoToAirtable(
@@ -4379,12 +4425,7 @@ bot.on("message:text", async (ctx) => {
         courseName: "Deposit",
         currency: "RUB",
         locale: "ru",
-        fullName:
-          session?.name ||
-          [ctx.from?.first_name, ctx.from?.last_name]
-            .filter(Boolean)
-            .join(" ")
-            .trim(),
+        fullName: purchaseName,
       }
     );
 
