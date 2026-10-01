@@ -10,10 +10,19 @@ const connectDB = require("./database");
 const Session = require("./sessionModel");
 const {
   upsertPurchaseCreated,
+  createYooKassaPurchaseCreated,
+  attachYooKassaPaymentId,
+  confirmYooKassaPurchase,
   markPurchasePaidAndProcess,
   matchPurchaseByTgTokenShadow,
   normalizePersonName,
 } = require("./lib/supabase/purchases");
+const {
+  createYooKassaPayment,
+  getYooKassaPayment,
+  getYooKassaConfig,
+} = require("./lib/payments/yookassa");
+const { resolveTelegramPaymentProvider } = require("./lib/payments/provider");
 const {
   getClientInfoByTgId,
   updateClientFuturePlan,
@@ -184,6 +193,128 @@ function generatePaymentLink(paymentId, sum, email, meta = {}) {
   )}&IsTest=0`; // Используйте https://auth.robokassa.ru/ для продакшена
 }
 
+function buildTelegramPurchaseInput({
+  tgId,
+  email,
+  fullName,
+  sum,
+  lessons,
+  tag,
+  nick,
+  meta = {},
+}) {
+  const airtableTag = normalizePurchaseTagForAirtable(tag);
+  const normalizedFullName = normalizePersonName(fullName);
+  const studioId = meta.studioId || resolveOfflineStudioIdForPurchase(meta.studio, tag);
+  const { format, tariffLabel } = resolveFormatAndTariffLabelForPurchase(
+    meta.studio,
+    tag,
+    lessons,
+    meta.tariffLabel
+  );
+  const supabaseTag = resolveSupabasePurchaseTag({
+    tag,
+    airtableTag,
+    lessons,
+    sum,
+    currency: meta.currency || "RUB",
+    format,
+  });
+
+  return {
+    sourceChannel: "telegram_bot",
+    paymentProvider: meta.paymentProvider || null,
+    email: email || null,
+    fi: normalizedFullName,
+    tgid: tgId,
+    createdTime: new Date().toISOString(),
+    purchaseSum: sum,
+    currency: meta.currency || "RUB",
+    lessons,
+    pricePerLesson:
+      Number.isFinite(Number(lessons)) && Number(lessons) > 0
+        ? Number(sum) / Number(lessons)
+        : null,
+    status: "Created",
+    courseName: airtableTag || null,
+    tag: supabaseTag,
+    nickname: nick || meta.nickname || null,
+    phone: meta.phone || null,
+    tariffLabel: tariffLabel || null,
+    studioSlug: meta.studio || studioId || null,
+    slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
+    format: format || null,
+    giftRecipient: meta.giftRecipient || null,
+    tgLinkToken: meta.tgLinkToken || null,
+  };
+}
+
+async function createYooKassaTelegramPayment({
+  tgId,
+  email,
+  fullName,
+  sum,
+  lessons,
+  tag,
+  nick,
+  meta = {},
+  descriptionMeta = {},
+}) {
+  if (String(meta.currency || "RUB").toUpperCase() !== "RUB") {
+    throw new Error("YooKassa поддерживает только RUB-платежи в этом боте");
+  }
+
+  const purchaseResult = await createYooKassaPurchaseCreated(
+    buildTelegramPurchaseInput({
+      tgId,
+      email,
+      fullName,
+      sum,
+      lessons,
+      tag,
+      nick,
+      meta: {
+        ...meta,
+        currency: "RUB",
+        paymentProvider: "yookassa",
+      },
+    })
+  );
+
+  if (!purchaseResult.ok || !purchaseResult.purchaseId) {
+    throw new Error(`Не удалось создать Supabase purchase для YooKassa: ${purchaseResult.reason || "unknown"}`);
+  }
+
+  const payment = await createYooKassaPayment({
+    purchaseId: purchaseResult.purchaseId,
+    amount: sum,
+    description: resolveReceiptServiceName(descriptionMeta),
+  });
+
+  const paymentId = String(payment?.id || "").trim();
+  const paymentLink = String(payment?.confirmation?.confirmation_url || "").trim();
+  if (!paymentId || !paymentLink) {
+    throw new Error("YooKassa не вернула payment id или confirmation_url");
+  }
+
+  const attachResult = await attachYooKassaPaymentId({
+    purchaseId: purchaseResult.purchaseId,
+    paymentId,
+  });
+
+  if (!attachResult.ok) {
+    throw new Error(`Не удалось сохранить YooKassa payment id в Supabase: ${attachResult.reason || "unknown"}`);
+  }
+
+  return {
+    paymentLink,
+    paymentId,
+    purchaseId: purchaseResult.purchaseId,
+    provider: "yookassa",
+    isYooKassa: true,
+  };
+}
+
 // Функция для создания объекта Price
 async function createStripePriceAMD(amount, currency, productName) {
   const price = await stripe.prices.create({
@@ -196,7 +327,7 @@ async function createStripePriceAMD(amount, currency, productName) {
   return price.id;
 }
 
-async function generatePaymentLinkFirst(studio, email) {
+async function generatePaymentLinkFirst(studio, email, meta = {}) {
   const studioInfo = studioDetails[studio];
 
   if (!studioInfo) {
@@ -207,14 +338,35 @@ async function generatePaymentLinkFirst(studio, email) {
   const sum = studioInfo.price;
   const currency = studioInfo.currency;
   const e = email;
+  const resolvedProvider = resolveTelegramPaymentProvider(studioInfo.paymentSystem);
 
-  if (studioInfo.paymentSystem === "robokassa") {
+  if (resolvedProvider === "yookassa") {
+    return createYooKassaTelegramPayment({
+      tgId: meta.tgId,
+      email: e,
+      fullName: meta.fullName,
+      sum,
+      lessons: 1,
+      tag: studioInfo.tag,
+      nick: meta.nickname,
+      meta: {
+        ...meta,
+        studio,
+        currency: "RUB",
+      },
+      descriptionMeta: {
+        studioName: studio,
+      },
+    });
+  }
+
+  if (resolvedProvider === "robokassa") {
     // Генерация ссылки для Robokassa
     const paymentLink = generatePaymentLink(paymentId, sum, e, {
       studioName: studio,
     });
-    return { paymentLink, paymentId };
-  } else if (studioInfo.paymentSystem === "stripeAMD") {
+    return { paymentLink, paymentId, provider: "robokassa" };
+  } else if (resolvedProvider === "stripeAMD") {
     // Генерация ссылки для Stripe
     const priceId = await createStripePriceAMD(
       studioInfo.price,
@@ -223,9 +375,9 @@ async function generatePaymentLinkFirst(studio, email) {
     );
     const paymentLink = await createStripePaymentLink(priceId, paymentId);
     return { paymentLink, paymentId };
-  } else {
-    throw new Error("Неизвестная платёжная система");
   }
+
+  throw new Error("Неизвестная платёжная система");
 }
 
 // --- Ameriabank VPOS (EUR/USD) ---
@@ -456,7 +608,7 @@ async function pollAmeriaUntilFinal(ctx, paymentId) {
   await ctx.reply("Платёж ещё обрабатывается. Если вы уже оплатили, подождите пару минут и повторите проверку.");
 }
 
-async function generateSecondPaymentLink(buy, email, tgId, fullName) {
+async function generateSecondPaymentLink(buy, email, tgId, fullName, meta = {}) {
   const actionInfo = actionData[buy];
 
   if (!actionInfo) {
@@ -468,16 +620,44 @@ async function generateSecondPaymentLink(buy, email, tgId, fullName) {
   const currency = actionInfo.currency;
   const studio = actionInfo.studio;
   const e = email;
+  const resolvedProvider = resolveTelegramPaymentProvider(actionInfo.paymentSystem);
 
-  if (actionInfo.paymentSystem === "robokassa") {
+  if (resolvedProvider === "yookassa") {
+    const purchaseMeta = meta && typeof meta === "object" ? meta : {};
+    const purchaseTariffLabel = purchaseMeta.tariffLabel || actionInfo.tariffLabel || null;
+    const descriptionTariffLabel =
+      purchaseTariffLabel || `${actionInfo.lessons} lessons — ${actionInfo.sum} ${currency}`;
+    return createYooKassaTelegramPayment({
+      tgId,
+      email: e,
+      fullName,
+      sum,
+      lessons: actionInfo.lessons,
+      tag: actionInfo.tag,
+      meta: {
+        ...purchaseMeta,
+        studio: purchaseMeta.studio ?? actionInfo.studio,
+        tariffLabel: purchaseTariffLabel,
+        currency: "RUB",
+        locale: purchaseMeta.locale || "ru",
+      },
+      descriptionMeta: {
+        tariffLabel: descriptionTariffLabel,
+        courseName: purchaseMeta.courseName || actionInfo.courseName,
+        studioName: purchaseMeta.studio || actionInfo.studio || studio,
+      },
+    });
+  }
+
+  if (resolvedProvider === "robokassa") {
     // Генерация ссылки для Robokassa
     const paymentLink = generatePaymentLink(paymentId, sum, e, {
       tariffLabel: actionInfo.tariffLabel,
       courseName: actionInfo.courseName,
       studioName: actionInfo.studio || studio,
     });
-    return { paymentLink, paymentId };
-  } else if (actionInfo.paymentSystem === "stripeAMD") {
+    return { paymentLink, paymentId, provider: "robokassa" };
+  } else if (resolvedProvider === "stripeAMD") {
     // Генерация ссылки для Stripe
     const priceId = await createStripePriceAMD(
       actionInfo.sum,
@@ -486,7 +666,7 @@ async function generateSecondPaymentLink(buy, email, tgId, fullName) {
     );
     const paymentLink = await createStripePaymentLink(priceId, paymentId);
     return { paymentLink, paymentId };
-  } else if (actionInfo.paymentSystem === "stripeEUR") {
+  } else if (resolvedProvider === "stripeEUR") {
     // Генерация ссылки для Stripe (оставлено для AMD или legacy)
     const priceId = await createStripePriceEUR(
       actionInfo.sum,
@@ -495,7 +675,7 @@ async function generateSecondPaymentLink(buy, email, tgId, fullName) {
     );
     const paymentLink = await createStripePaymentLink(priceId, paymentId);
     return { paymentLink, paymentId };
-  } else if (actionInfo.paymentSystem === "ameria") {
+  } else if (resolvedProvider === "ameria") {
     // Ameriabank VPOS для EUR/USD (tgId и fullName передаются аргументами)
     const tariffId = actionInfo.tag || buy;
     const tariffLabel = `${actionInfo.lessons} lessons — ${actionInfo.sum} ${currency}`;
@@ -513,9 +693,9 @@ async function generateSecondPaymentLink(buy, email, tgId, fullName) {
       locale: "ru",
     });
     return { paymentLink: paymentUrl, paymentId: ameriaPaymentId, isAmeria: true };
-  } else {
-    throw new Error("Неизвестная платёжная система");
   }
+
+  throw new Error("Неизвестная платёжная система");
 }
 
 // Функция для создания цены в Stripe
@@ -2561,33 +2741,37 @@ async function sendTwoToAirtable(
     });
   }
 
-  await upsertPurchaseCreated({
-    sourceChannel: "telegram_bot",
-    email: meta.email || null,
-    fi: normalizedFullName,
-    tgid: tgId,
-    createdTime: new Date().toISOString(),
-    purchaseSum: sum,
-    currency: meta.currency || "RUB",
-    lessons,
-    pricePerLesson:
-      Number.isFinite(Number(lessons)) && Number(lessons) > 0
-        ? Number(sum) / Number(lessons)
-        : null,
-    idPayment: invId,
-    status: "Created",
-    courseName: airtableTag || null,
-    tag: supabaseTag,
-    nickname: nick || null,
-    phone: meta.phone || null,
-    locale: meta.locale || "ru",
-    tariffLabel: tariffLabel || null,
-    studioSlug: meta.studio || studioId || null,
-    slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
-    format: format || null,
-    giftRecipient: meta.giftRecipient || null,
-    tgLinkToken: meta.tgLinkToken || null,
-  });
+  const shouldWriteSupabase = meta.paymentProvider !== "yookassa";
+  if (shouldWriteSupabase) {
+    await upsertPurchaseCreated({
+      sourceChannel: "telegram_bot",
+      paymentProvider: meta.paymentProvider || "robokassa",
+      email: meta.email || null,
+      fi: normalizedFullName,
+      tgid: tgId,
+      createdTime: new Date().toISOString(),
+      purchaseSum: sum,
+      currency: meta.currency || "RUB",
+      lessons,
+      pricePerLesson:
+        Number.isFinite(Number(lessons)) && Number(lessons) > 0
+          ? Number(sum) / Number(lessons)
+          : null,
+      idPayment: invId,
+      status: "Created",
+      courseName: airtableTag || null,
+      tag: supabaseTag,
+      nickname: nick || null,
+      phone: meta.phone || null,
+      locale: meta.locale || "ru",
+      tariffLabel: tariffLabel || null,
+      studioSlug: meta.studio || studioId || null,
+      slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
+      format: format || null,
+      giftRecipient: meta.giftRecipient || null,
+      tgLinkToken: meta.tgLinkToken || null,
+    });
+  }
 
 }
 
@@ -2776,33 +2960,87 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
     });
   }
 
-  await upsertPurchaseCreated({
-    sourceChannel: "telegram_bot",
-    email: meta.email || null,
-    fi: normalizedFullName,
-    tgid: tgId,
-    createdTime: new Date().toISOString(),
-    purchaseSum: sum,
-    currency: meta.currency || "RUB",
-    lessons,
-    pricePerLesson:
-      Number.isFinite(Number(lessons)) && Number(lessons) > 0
-        ? Number(sum) / Number(lessons)
-        : null,
-    idPayment: invId,
-    status: "Created",
-    courseName: airtableTag || null,
-    tag: supabaseTag,
-    nickname: meta.nickname || null,
-    phone: meta.phone || null,
-    locale: meta.locale || "ru",
-    tariffLabel: tariffLabel || null,
-    studioSlug: meta.studio || studioId || null,
-    slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
-    format: format || null,
-    giftRecipient: meta.giftRecipient || null,
-    tgLinkToken: meta.tgLinkToken || null,
+  const shouldWriteSupabase = meta.paymentProvider !== "yookassa";
+  if (shouldWriteSupabase) {
+    await upsertPurchaseCreated({
+      sourceChannel: "telegram_bot",
+      paymentProvider: meta.paymentProvider || "robokassa",
+      email: meta.email || null,
+      fi: normalizedFullName,
+      tgid: tgId,
+      createdTime: new Date().toISOString(),
+      purchaseSum: sum,
+      currency: meta.currency || "RUB",
+      lessons,
+      pricePerLesson:
+        Number.isFinite(Number(lessons)) && Number(lessons) > 0
+          ? Number(sum) / Number(lessons)
+          : null,
+      idPayment: invId,
+      status: "Created",
+      courseName: airtableTag || null,
+      tag: supabaseTag,
+      nickname: meta.nickname || null,
+      phone: meta.phone || null,
+      locale: meta.locale || "ru",
+      tariffLabel: tariffLabel || null,
+      studioSlug: meta.studio || studioId || null,
+      slotStartAt: normalizeSlotStartAtForSupabase(meta.slotStartAt),
+      format: format || null,
+      giftRecipient: meta.giftRecipient || null,
+      tgLinkToken: meta.tgLinkToken || null,
+    });
+  }
+}
+
+function extractYooKassaPaymentIdFromWebhook(body) {
+  return String(
+    body?.object?.id ||
+      body?.id ||
+      body?.payment_id ||
+      ""
+  ).trim();
+}
+
+async function confirmYooKassaPaymentById(paymentId) {
+  const payment = await getYooKassaPayment(paymentId);
+  const status = String(payment?.status || "").trim().toLowerCase();
+
+  if (!["succeeded", "canceled"].includes(status)) {
+    return {
+      ok: true,
+      ignored: true,
+      status,
+    };
+  }
+
+  const purchaseId = String(payment?.metadata?.orderId || "").trim();
+  if (!purchaseId) {
+    return { ok: false, reason: "missing_order_id" };
+  }
+
+  const config = getYooKassaConfig();
+  const confirmResult = await confirmYooKassaPurchase({
+    purchaseId,
+    paymentId: payment.id,
+    amount: payment?.amount?.value,
+    currency: payment?.amount?.currency,
+    shopId: payment?.recipient?.account_id,
+    expectedShopId: config.shopId,
+    status,
   });
+
+  if (!confirmResult.ok) {
+    return confirmResult;
+  }
+
+  return {
+    ok: true,
+    status,
+    purchaseId,
+    paymentId: payment.id,
+    data: confirmResult.data,
+  };
 }
 
 // Создаем и настраиваем Express-приложение
@@ -2863,6 +3101,35 @@ app.post("/payments/ameria/check", async (req, res) => {
   } catch (e) {
     logError("ameria_check_failed", e, { payment_id: safeScalar(req.body?.paymentId) });
     return res.status(500).json({ ok: false, error: e.message || "Check failed" });
+  }
+});
+
+// --- YooKassa notifications ---
+app.post("/webhook/yookassa", async (req, res) => {
+  try {
+    const event = String(req.body?.event || "").trim();
+    if (!["payment.succeeded", "payment.canceled"].includes(event)) {
+      return res.status(200).json({ ok: true, ignored: true });
+    }
+
+    const paymentId = extractYooKassaPaymentIdFromWebhook(req.body);
+    if (!paymentId) {
+      return res.status(400).json({ ok: false, error: "payment id required" });
+    }
+
+    const result = await confirmYooKassaPaymentById(paymentId);
+    if (!result.ok) {
+      console.warn("yookassa_webhook_confirm_failed", {
+        payment_id: safeScalar(paymentId),
+        reason: safeScalar(result.reason),
+      });
+      return res.status(500).json({ ok: false });
+    }
+
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    logError("yookassa_webhook_failed", e);
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -3464,19 +3731,7 @@ bot.on("callback_query:data", async (ctx) => {
 
     await ctx.answerCallbackQuery({ text: "Слот выбран" });
 
-    const { paymentLink, paymentId } = await generatePaymentLinkFirst(
-      session.studio,
-      session.email
-    );
     const dateTime = `${picked.ddmm} ${picked.hhmm}`;
-
-    await ctx.reply(
-      `Отлично! Вы выбрали: ${picked.human}. Для подтверждения записи оплатите, пожалуйста, тренировку по ссылке ниже. После оплаты вы получите сообщение с подтверждением записи.`
-    );
-    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
-
-    const sum = studioDetails[session.studio]?.price;
-    const tag = studioDetails[session.studio]?.tag;
     const purchaseName =
       normalizePersonName(session?.name) ||
       normalizePersonName(
@@ -3485,6 +3740,25 @@ bot.on("callback_query:data", async (ctx) => {
           .join(" ")
       ) ||
       null;
+    const { paymentLink, paymentId, isYooKassa } = await generatePaymentLinkFirst(
+      session.studio,
+      session.email,
+      {
+        tgId: ctx.from.id,
+        fullName: purchaseName,
+        nickname: ctx.from.username,
+        locale: "ru",
+        slotStartAt: dateTime,
+      }
+    );
+
+    await ctx.reply(
+      `Отлично! Вы выбрали: ${picked.human}. Для подтверждения записи оплатите, пожалуйста, тренировку по ссылке ниже. После оплаты вы получите сообщение с подтверждением записи.`
+    );
+    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
+
+    const sum = studioDetails[session.studio]?.price;
+    const tag = studioDetails[session.studio]?.tag;
     await sendTwoToAirtable(
       ctx.from.id,
       paymentId,
@@ -3501,6 +3775,7 @@ bot.on("callback_query:data", async (ctx) => {
         locale: "ru",
         slotStartAt: dateTime,
         fullName: purchaseName,
+        paymentProvider: isYooKassa ? "yookassa" : "robokassa",
       }
     );
 
@@ -4056,11 +4331,22 @@ bot.on("callback_query:data", async (ctx) => {
             .join(" ")
         ) ||
         null;
-    const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
+      const purchaseMeta = {
+        email: session?.email,
+        fullName: purchaseName,
+        nickname: ctx.from?.username || "",
+        studio: actionInfo?.studio || session?.studio,
+        tariffLabel: actionInfo?.tariffLabel,
+        courseName: actionInfo?.studio || session?.studio,
+        currency: actionInfo?.currency,
+        locale: "ru",
+      };
+      const { paymentLink, paymentId, isAmeria, isYooKassa } = await generateSecondPaymentLink(
         action,
         session.email,
         ctx.from.id,
-        purchaseName
+        purchaseName,
+        purchaseMeta
       );
 
       await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
@@ -4075,14 +4361,8 @@ bot.on("callback_query:data", async (ctx) => {
           actionInfo.lessons,
           actionInfo.tag,
           {
-            email: session?.email,
-            fullName: purchaseName,
-            nickname: ctx.from?.username || "",
-            studio: actionInfo?.studio || session?.studio,
-            tariffLabel: actionInfo?.tariffLabel,
-            courseName: actionInfo?.studio || session?.studio,
-            currency: actionInfo?.currency,
-            locale: "ru",
+            ...purchaseMeta,
+            paymentProvider: isYooKassa ? "yookassa" : "robokassa",
           }
         );
       }
@@ -4106,9 +4386,24 @@ bot.on("callback_query:data", async (ctx) => {
     await ctx.deleteMessage();
 
     // Генерация ссылки на оплату и получение paymentId
-    const { paymentLink, paymentId } = await generatePaymentLinkFirst(
+    const purchaseName =
+      normalizePersonName(session?.name) ||
+      normalizePersonName(
+        [ctx.from?.first_name, ctx.from?.last_name]
+          .filter(Boolean)
+          .join(" ")
+      ) ||
+      null;
+    const { paymentLink, paymentId, isYooKassa } = await generatePaymentLinkFirst(
       session.studio,
-      session.email
+      session.email,
+      {
+        tgId: ctx.from.id,
+        fullName: purchaseName,
+        nickname: ctx.from.username,
+        locale: "ru",
+        slotStartAt: str2,
+      }
     );
     console.log("Отправляю ссылку для оплаты");
     await ctx.reply(
@@ -4121,14 +4416,6 @@ bot.on("callback_query:data", async (ctx) => {
     const sum = studioDetails[session.studio].price;
     const lessons = 1;
     const tag = studioDetails[session.studio].tag; // Берем тег из студии
-    const purchaseName =
-      normalizePersonName(session?.name) ||
-      normalizePersonName(
-        [ctx.from?.first_name, ctx.from?.last_name]
-          .filter(Boolean)
-          .join(" ")
-      ) ||
-      null;
     await sendTwoToAirtable(
       ctx.from.id,
       paymentId,
@@ -4145,6 +4432,7 @@ bot.on("callback_query:data", async (ctx) => {
         locale: "ru",
         slotStartAt: str2,
         fullName: purchaseName,
+        paymentProvider: isYooKassa ? "yookassa" : "robokassa",
       }
     );
   } else if (action.startsWith("testday")) {
@@ -4253,11 +4541,22 @@ bot.on("callback_query:data", async (ctx) => {
       ) ||
       null;
     try {
-      const { paymentLink, paymentId, isAmeria } = await generateSecondPaymentLink(
+      const purchaseMeta = {
+        email,
+        fullName: purchaseName,
+        nickname: ctx.from?.username || "",
+        studio: actionInfo?.studio || session?.studio,
+        tariffLabel: actionInfo?.tariffLabel,
+        courseName: actionInfo?.studio || session?.studio,
+        currency: actionInfo?.currency,
+        locale: "ru",
+      };
+      const { paymentLink, paymentId, isAmeria, isYooKassa } = await generateSecondPaymentLink(
         action,
         email,
         ctx.from.id,
-        purchaseName
+        purchaseName,
+        purchaseMeta
       );
 
       await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
@@ -4271,14 +4570,8 @@ bot.on("callback_query:data", async (ctx) => {
           actionInfo.lessons,
           actionInfo.tag,
           {
-            email,
-            fullName: purchaseName,
-            nickname: ctx.from?.username || "",
-            studio: actionInfo?.studio || session?.studio,
-            tariffLabel: actionInfo?.tariffLabel,
-            courseName: actionInfo?.studio || session?.studio,
-            currency: actionInfo?.currency,
-            locale: "ru",
+            ...purchaseMeta,
+            paymentProvider: isYooKassa ? "yookassa" : "robokassa",
           }
         );
       }
@@ -4396,11 +4689,6 @@ bot.on("message:text", async (ctx) => {
       return;
     }
     const tag = userInfo?.tag || "Отсутствует";
-    const paymentId = generateUniqueId();
-    const paymentLink = generatePaymentLink(paymentId, sum, userInfo.email, {
-      courseName: "Deposit",
-    });
-    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
     const purchaseName =
       normalizePersonName(userInfo?.fio) ||
       normalizePersonName(session?.name) ||
@@ -4410,6 +4698,37 @@ bot.on("message:text", async (ctx) => {
           .join(" ")
       ) ||
       null;
+    let paymentId;
+    let paymentLink;
+    let paymentProvider = "robokassa";
+    if (resolveTelegramPaymentProvider("robokassa") === "yookassa") {
+      const result = await createYooKassaTelegramPayment({
+        tgId,
+        email: userInfo.email,
+        fullName: purchaseName,
+        sum,
+        lessons: 0,
+        tag: "deposit",
+        nick: ctx.from.username,
+        meta: {
+          courseName: "Deposit",
+          currency: "RUB",
+          locale: "ru",
+        },
+        descriptionMeta: {
+          courseName: "Deposit",
+        },
+      });
+      paymentId = result.paymentId;
+      paymentLink = result.paymentLink;
+      paymentProvider = "yookassa";
+    } else {
+      paymentId = generateUniqueId();
+      paymentLink = generatePaymentLink(paymentId, sum, userInfo.email, {
+        courseName: "Deposit",
+      });
+    }
+    await ctx.reply(`Для оплаты перейдите по ссылке: ${paymentLink}`);
 
     // Отправляем данные о депозите в Airtable
     await sendTwoToAirtable(
@@ -4426,6 +4745,7 @@ bot.on("message:text", async (ctx) => {
         currency: "RUB",
         locale: "ru",
         fullName: purchaseName,
+        paymentProvider,
       }
     );
 
