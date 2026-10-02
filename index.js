@@ -2655,6 +2655,32 @@ async function getPurchaseRecordByInvId(invId) {
   return data.records && data.records.length > 0 ? data.records[0] : null;
 }
 
+async function getPurchaseRecordByUuid(paymentId) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const purchasesId = getAirtablePurchasesTableId();
+  const escapedPaymentId = String(paymentId || "").replace(/"/g, '""');
+  const filterByFormula = `{id_uuid}="${escapedPaymentId}"`;
+  const url = `https://api.airtable.com/v0/${baseId}/${purchasesId}?filterByFormula=${encodeURIComponent(
+    filterByFormula
+  )}`;
+  const { data } = await axios.get(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  return data.records && data.records.length > 0 ? data.records[0] : null;
+}
+
+function safeAirtableErrorSummary(error) {
+  const airtableError = error?.response?.data?.error;
+  return Object.fromEntries(
+    Object.entries({
+      status: safeScalar(error?.response?.status),
+      type: safeScalar(airtableError?.type),
+      message: safeScalar(airtableError?.message || error?.message),
+    }).filter(([, value]) => value != null)
+  );
+}
+
 async function patchPurchaseRecord(recordId, fields) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
@@ -2669,6 +2695,61 @@ async function patchPurchaseRecord(recordId, fields) {
       },
     }
   );
+}
+
+async function syncYooKassaAirtablePurchaseStatus({ paymentId, status }) {
+  const normalizedPaymentId = String(paymentId || "").trim();
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (!normalizedPaymentId) {
+    return { ok: false, reason: "missing_payment_id" };
+  }
+
+  if (normalizedStatus !== "succeeded") {
+    return { ok: true, ignored: true, status: normalizedStatus };
+  }
+
+  let record;
+  try {
+    record = await getPurchaseRecordByUuid(normalizedPaymentId);
+  } catch (error) {
+    console.error("yookassa_airtable_sync_lookup_failed", {
+      payment_id: safeScalar(normalizedPaymentId),
+      error: safeAirtableErrorSummary(error),
+    });
+    return { ok: false, reason: "airtable_lookup_failed" };
+  }
+
+  if (!record) {
+    console.warn("yookassa_airtable_sync_missing", {
+      payment_id: safeScalar(normalizedPaymentId),
+    });
+    return { ok: false, reason: "airtable_record_missing" };
+  }
+
+  const currentStatus = String(record.fields?.Status || "").trim().toLowerCase();
+  if (currentStatus === "paid") {
+    console.log("yookassa_airtable_sync_ok", {
+      payment_id: safeScalar(normalizedPaymentId),
+      status: "paid",
+      already_paid: true,
+    });
+    return { ok: true, status: "paid", alreadyPaid: true };
+  }
+
+  try {
+    await patchPurchaseRecord(record.id, { Status: "paid" });
+    console.log("yookassa_airtable_sync_ok", {
+      payment_id: safeScalar(normalizedPaymentId),
+      status: "paid",
+    });
+    return { ok: true, status: "paid" };
+  } catch (error) {
+    console.error("yookassa_airtable_sync_failed", {
+      payment_id: safeScalar(normalizedPaymentId),
+      error: safeAirtableErrorSummary(error),
+    });
+    return { ok: false, reason: "airtable_patch_failed" };
+  }
 }
 
 // Функция для отправки данных в Airtable 2
@@ -2694,16 +2775,22 @@ async function sendTwoToAirtable(
 
   const airtableTag = normalizePurchaseTagForAirtable(tag);
   const normalizedFullName = normalizePersonName(meta.fullName);
+  const paymentProvider = meta.paymentProvider || "robokassa";
   const fields = {
     tgId: tgId,
-    inv_id: invId,
     Sum: sum,
     Lessons: lessons,
     Tag: airtableTag,
     Date: date || formatPurchaseDateTime(new Date()),
     Nickname: nick,
     Status: "created",
+    payment_provider: paymentProvider,
   };
+  if (paymentProvider === "yookassa") {
+    fields.id_uuid = invId;
+  } else {
+    fields.inv_id = invId;
+  }
   if (meta.email) fields.email = meta.email;
   if (normalizedFullName) {
     fields.FIO = normalizedFullName;
@@ -2735,9 +2822,10 @@ async function sendTwoToAirtable(
   try {
     await axios.post(url, data, { headers });
   } catch (error) {
-    logError("airtable_purchase_send_failed", error, {
+    console.error("airtable_purchase_send_failed", {
       payment_id: safeScalar(invId),
       tg: safeLogTgId(tgId),
+      error: safeAirtableErrorSummary(error),
     });
   }
 
@@ -2913,15 +3001,21 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
 
   const airtableTag = normalizePurchaseTagForAirtable(tag);
   const normalizedFullName = normalizePersonName(meta.fullName);
+  const paymentProvider = meta.paymentProvider || "robokassa";
   const fields = {
     tgId: tgId,
-    inv_id: invId,
     Sum: sum,
     Lessons: lessons,
     Tag: airtableTag,
     Date: formatPurchaseDateTime(new Date()),
     Status: "created",
+    payment_provider: paymentProvider,
   };
+  if (paymentProvider === "yookassa") {
+    fields.id_uuid = invId;
+  } else {
+    fields.inv_id = invId;
+  }
   if (meta.email) fields.email = meta.email;
   if (normalizedFullName) {
     fields.FIO = normalizedFullName;
@@ -2954,9 +3048,10 @@ async function thirdTwoToAirtable(tgId, invId, sum, lessons, tag, meta = {}) {
   try {
     await axios.post(url, data, { headers });
   } catch (error) {
-    logError("airtable_purchase_send_failed", error, {
+    console.error("airtable_purchase_send_failed", {
       payment_id: safeScalar(invId),
       tg: safeLogTgId(tgId),
+      error: safeAirtableErrorSummary(error),
     });
   }
 
@@ -3034,6 +3129,24 @@ async function confirmYooKassaPaymentById(paymentId) {
     return confirmResult;
   }
 
+  if (status === "succeeded") {
+    const airtableSync = await syncYooKassaAirtablePurchaseStatus({
+      paymentId: payment.id,
+      status,
+    });
+    if (!airtableSync.ok) {
+      return {
+        ok: false,
+        reason: "airtable_sync_failed",
+        airtableReason: airtableSync.reason,
+        status,
+        purchaseId,
+        paymentId: payment.id,
+        data: confirmResult.data,
+      };
+    }
+  }
+
   return {
     ok: true,
     status,
@@ -3108,16 +3221,30 @@ app.post("/payments/ameria/check", async (req, res) => {
 app.post("/webhook/yookassa", async (req, res) => {
   try {
     const event = String(req.body?.event || "").trim();
+    const paymentId = extractYooKassaPaymentIdFromWebhook(req.body);
+    console.log("yookassa_webhook_received", {
+      event: safeScalar(event),
+      payment_id: safeScalar(paymentId),
+    });
+
     if (!["payment.succeeded", "payment.canceled"].includes(event)) {
       return res.status(200).json({ ok: true, ignored: true });
     }
 
-    const paymentId = extractYooKassaPaymentIdFromWebhook(req.body);
     if (!paymentId) {
       return res.status(400).json({ ok: false, error: "payment id required" });
     }
 
     const result = await confirmYooKassaPaymentById(paymentId);
+    console.log("yookassa_webhook_result", {
+      payment_id: safeScalar(paymentId),
+      purchaseId: safeScalar(result.purchaseId),
+      status: safeScalar(result.status),
+      ok: Boolean(result.ok),
+      ignored: Boolean(result.ignored),
+      reason: safeScalar(result.reason),
+    });
+
     if (!result.ok) {
       console.warn("yookassa_webhook_confirm_failed", {
         payment_id: safeScalar(paymentId),
