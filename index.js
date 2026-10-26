@@ -15,8 +15,10 @@ const {
   confirmYooKassaPurchase,
   markPurchasePaidAndProcess,
   matchPurchaseByTgTokenShadow,
+  getPurchaseByTgLinkToken,
   normalizePersonName,
 } = require("./lib/supabase/purchases");
+const { handlePurchaseTokenFlow } = require("./lib/purchase-token-flow");
 const {
   createYooKassaPayment,
   getYooKassaPayment,
@@ -3367,173 +3369,50 @@ bot.command("start", async (ctx) => {
     if (startParam && !SYSTEM_START_PARAMS.has(startParam)) {
       try {
         const token = startParam.trim();
-    
-        const payment = await getPurchaseByToken(token);
-    
-        if (!payment) {
-          await ctx.reply(
-            "Не нашёл оплату по этой ссылке. Проверь, что ты открыл(а) ссылку со страницы оплаты. Если проблема повторяется — напиши в поддержку."
-          );
-          return;
-        }
-    
-        const f = payment.fields;
-    
-        const status = String(f.Status || f.status || "").toLowerCase();
-        // допустим, “paid” или “Paid”
-        const isPaid = status === "paid";
-    
-        if (!isPaid) {
-          await ctx.reply(
-            "Оплата по этой ссылке ещё не подтверждена. Если ты только что оплатил(а), подожди пару минут и открой ссылку ещё раз."
-          );
-          return;
-        }
-    
-        // защита от повторной привязки
-        const alreadyTgId = f.tgId || f.telegram_id || f.telegramId;
-        if (alreadyTgId && String(alreadyTgId) !== String(ctx.from.id)) {
-          await ctx.reply(
-            "Эта покупка уже привязана к другому аккаунту Telegram. Если это ошибка — напиши в поддержку."
-          );
-          return;
-        }
-    
-        const fio = f.FIO || f.Fio || f.fullName || f.name || "друг";
-        const sum = f.Sum ?? f.sum;
-        const currency = f.Currency || f.currency;
-        const formatRaw = f.format ?? f.Format ?? "";
-        const formatValue = Array.isArray(formatRaw)
-          ? String(formatRaw[0] || "").toLowerCase()
-          : String(formatRaw || "").toLowerCase();
-        const studioRaw = f.studio_id ?? f.studioId ?? f.Studio_ID ?? "";
-        const studioId = Array.isArray(studioRaw)
-          ? String(studioRaw[0] || "")
-          : String(studioRaw || "");
-        const slotStartAt = f.slot_start_at ?? f.slotStartAt ?? f.Slot_start_at ?? "";
-        const firstWorkoutDate = formatSlotStartDate(slotStartAt);
-    
-        // обновляем запись: ставим Matched и сохраняем tgId
-        await patchAirtableRecord(payment.tableId, payment.recordId, {
-          Status: "matched",
-          tgId: ctx.from.id,
-          Nickname: ctx.from.username || "", // если нужно
-        });
-        await matchPurchaseByTgTokenShadow({
+
+        await handlePurchaseTokenFlow({
+          ctx,
           token,
-          tgid: String(ctx.from.id),
-          username: ctx.from.username || null,
+          lookupPurchaseByToken: getPurchaseByTgLinkToken,
+          matchPurchaseByTgToken: matchPurchaseByTgTokenShadow,
+          sendAdminFollowUp: async ({ purchase, username, tgId }) => {
+            const displayUsername = username
+              ? `@${String(username).replace(/^@+/, "")}`
+              : "username отсутствует";
+
+            const email = String(purchase?.email || "").trim();
+            const fio = String(purchase?.fi || "").trim();
+
+            const lines = [
+              "🔗 Telegram привязан к покупке",
+              "",
+            ];
+
+            if (fio) {
+              lines.push(`Клиент: ${fio}`);
+            }
+
+            if (email) {
+              lines.push(`Email: ${email}`);
+            }
+
+            lines.push(
+              `TG: ${displayUsername}`,
+              `TG ID: ${tgId}`
+            );
+
+            await bot.api.sendMessage(
+              PURCHASE_LINK_ADMIN_CHAT_ID,
+              lines.join("\n")
+            );
+          },
+          InlineKeyboard,
+          gymStudioMeta: GYM_STUDIO_META,
+          formatSlotStartDate,
+          formatMoney,
+          resolveOfflineStudioIdForPurchase,
+          logError,
         });
-
-        try {
-          const username = ctx.from.username
-            ? `@${ctx.from.username.replace(/^@+/, "")}`
-            : "username отсутствует";
-        
-          const email = String(
-            payment.fields?.email ||
-            payment.fields?.Email ||
-            ""
-          ).trim();
-        
-          const fio = String(
-            payment.fields?.FIO ||
-            payment.fields?.Fio ||
-            payment.fields?.fi ||
-            ""
-          ).trim();
-        
-          const lines = [
-            "🔗 Telegram привязан к покупке",
-            "",
-          ];
-        
-          if (fio) {
-            lines.push(`Клиент: ${fio}`);
-          }
-        
-          if (email) {
-            lines.push(`Email: ${email}`);
-          }
-        
-          lines.push(
-            `TG: ${username}`,
-            `TG ID: ${ctx.from.id}`
-          );
-        
-          await bot.api.sendMessage(
-            PURCHASE_LINK_ADMIN_CHAT_ID,
-            lines.join("\n")
-          );
-          
-        } catch {
-          console.error("telegram_purchase_link_admin_follow_up_failed");
-        }
-    
-        if (formatValue === "gym") {
-          const meta = GYM_STUDIO_META[studioId] || null;
-          const studioName = meta?.name || "нашей студии";
-          const studioAddress = meta?.address || "Адрес и детали будут отправлены менеджером.";
-          const trainerName = meta?.trainer || "тренер";
-          const dateLine = firstWorkoutDate
-            ? `${firstWorkoutDate} состоится ваша первая тренировка в формате I Do Calisthenics.`
-            : "Скоро состоится ваша первая тренировка в формате I Do Calisthenics.";
-
-          if (studioId === "msk_youcan") {
-            try {
-              await ctx.reply(
-                `<b>Пока хорошая погода, тренировки проходят на открытом воздухе в парке Лужники.</b>\n\nНедалеко от канатной дороги: <a href="https://yandex.com/maps/213/moscow/?ll=37.553657%2C55.713098&mode=poi&poi%5Bpoint%5D=37.553265%2C55.713200&poi%5Buri%5D=ymapsbm1%3A%2F%2Forg%3Foid%3D100342209253&z=19">улица Лужники, 24с59</a>`,
-                {
-                  parse_mode: "HTML",
-                  disable_web_page_preview: true,
-                }
-              );
-            } catch (error) {
-              logError("youcan_outdoor_message_failed", error);
-            }
-          }
-
-          await ctx.reply(
-            `Ура, ${fio}, оплата прошла успешно!\n${dateLine}\n\nЗал называется ${studioName} и находится по адресу:\n${studioAddress}\n\nС собой берём удобную спортивную форму и бутылочку воды, также при необходимости принадлежности для душа.\n\nТренер ${trainerName} будет ждать вас в зале 😊`
-          );
-          await ctx.reply(
-            "❗️ Важно: если вам нужно перенести пробную тренировку, воспользуйтесь командой /reschedule и выберите удобную дату.\n\nОбратите внимание: пройти тренировку необходимо в течение 4 недель после оплаты.\nЕсли вам нужно больше времени, вы можете написать нашему менеджеру Никите — @IDC_manager — и попросить продлить срок."
-          );
-
-          const gymKb = new InlineKeyboard();
-          if (meta?.mapUrl) {
-            gymKb.add({ text: "📍 Как добраться", url: meta.mapUrl });
-          }
-          if (meta?.chatUrl) {
-            if (meta?.mapUrl) gymKb.row();
-            gymKb.add({ text: "💬 Присоединиться к чату", url: meta.chatUrl });
-          }
-          if (meta?.mapUrl || meta?.chatUrl) {
-            await ctx.reply("Полезные ссылки:", { reply_markup: gymKb });
-          }
-        } else if (formatValue === "ds") {
-          await ctx.reply(
-            "Ура, оплата прошла успешно!\n\nВскоре на вашу почту придет письмо с темой [TrueCoach] Invitation, содержащее приглашение для доступа к нашему приложению, где будет стоять первая тренировка.\n\nПосле прохождения первой тренировки наш тренер свяжется с вами и предоставит подробную обратную связь. Для удобства рекомендуем скачать мобильную версию приложения 👇🏻"
-          );
-          await ctx.reply(
-            "Краткая инструкция как выполнять тест силы от I Do Calisthenics:\n\nВсего 5-7 упражнений (в зависимости от выбранного курса). Для каждого упражнения в приложении указано возможное количество вариаций (от 1 до 3): вам надо выбрать и выполнить только одну вариацию и один подход в каждом упражнении — ту, которая для вас не самая простая, но с которой вы уверенно справитесь.\n\nВажно: все упражнения необходимо снять на видео и загрузить в приложение — это поможет нам определить ваш текущий уровень и составить последующие тренировки эффективно.",
-            {
-              reply_markup: new InlineKeyboard()
-                .add({
-                  text: "🍎 Скачать для iOS",
-                  url: "https://apps.apple.com/am/app/truecoach-for-clients/id1439127794",
-                })
-                .add({
-                  text: "🤖 Скачать для Android",
-                  url: "https://play.google.com/store/apps/details?id=co.truecoach.client",
-                }),
-            }
-          );
-        } else {
-          await ctx.reply(
-            `Привет, ${fio}! ✅\nОплата подтверждена: ${formatMoney(sum, currency)} зачислено на ваш счёт.\n\nМожешь продолжать — оплата уже отображается в системе.`
-          );
-        }
     
         // дальше можно сразу показать меню для существующего клиента:
         // если после matched запись попадает в Clients — то можно вызвать handleExistingUserScenario
